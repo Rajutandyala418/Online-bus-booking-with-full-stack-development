@@ -10,3 +10,50 @@ After filling the details go to payment page to complete the booking.
 In this i add a customer feedback about the trip and comfort and trip details etc.
 
 and there is a customer support which there any issue occurs while booking a ticket.
+
+
+Bus Ticket Booking System - Setup Guide
+🧾 Requirements:
+XAMPP or WAMP (for PHP, Apache, and MySQL)
+Web browser
+TCPDF library (for PDF generation)
+
+
+Folder Structure:
+arduino
+Copy
+Edit
+BusBookingApp/
+├── index.php
+├── home.php
+├── bus_select.php
+├── passenger_info.php
+├── payment.php
+├── confirmation.php
+├── generate_pdf.php
+├── config.php
+├── tcpdf/         ← download from https://tcpdf.org
+└── bus_booking_schema.sql
+
+Install and run XAMPP or WAMP.
+
+Place all files and folders inside: htdocs/BusBookingApp/
+
+Start Apache and MySQL from the XAMPP Control Panel.
+
+Go to http://localhost/phpmyadmin
+
+Create a database named bus_booking.
+
+Import bus_booking_schema.sql into that database.
+
+Open your app in browser: http://localhost/BusBookingApp/index.php
+
+Create an account and start booking.
+
+Apply coupon busparty for 10% off.
+
+After booking, click “Download PDF” to get your ticket.
+
+
+
