@@ -1,144 +1,247 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Welcome to Varahi Bus</title>
-  <style>
-    body, html {
-      margin: 0;
-      padding: 0;
-      height: 100%;
-      width: 100%;
-      font-family: Arial, sans-serif;
-      overflow: hidden;
-      background: linear-gradient(to top, #cceeff, #87ceeb);
-    }
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Varahi Bus – Booking Platform</title>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&display=swap" rel="stylesheet">
 
-    .content {
-      position: absolute;
-      top: 25%;
-      left: 50%;
-      transform: translateX(-50%);
-      text-align: center;
-      color: #fff;
-    }
+<style>
+*{margin:0;padding:0;box-sizing:border-box;font-family:'Poppins',sans-serif;}
 
-    .content h1 {
-      font-size: 3rem;
-      font-weight: bold;
-      color: #FFD54F;
-      margin-bottom: 15px;
-    }
+html,body{
+  width:100%;
+  height:100%;
+}
 
-    .content p {
-      font-size: 1.3rem;
-      font-style: italic;
-      margin-bottom: 30px;
-    }
+body{
+  min-height:100svh;
+  background-image:url('https://www.appikr.com/blog/wp-content/uploads/2022/11/Build-Your-Own-Online-Bus-Ticket-Booking-Ap.jpg');
+  background-repeat:no-repeat;
+  background-position:center center;
+  background-size:cover;
+  background-attachment:fixed;
+  color:#fff;
+  display:flex;
+  flex-direction:column;
+}
 
-    .buttons {
-      position: absolute;
-      top: 20px;
-      right: 20px;
-      display: flex;
-      gap: 20px;
-    }
+.header{
+  text-align:center;
+  padding:60px 12px 25px;
+  text-shadow:0 2px 6px rgba(0,0,0,0.6);
+}
+.header h1{
+  font-size:2.7rem;
+  font-weight:900;
 
-    .btn {
-      width: 90px;
-      height: 90px;
-      border-radius: 50%;
-      border: none;
-      cursor: pointer;
-      color: white;
-      font-weight: bold;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-      transition: transform 0.3s ease, opacity 0.3s;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 14px;
-      text-align: center;
-    }
+}
+.header p{
+  font-size:1.2rem;
+  margin-top:8px;
+}
 
-    .btn-admin { background: #e74c3c; }
-    .btn-traveller { background: #3498db; }
+.buttons{
+  display:flex;
+  justify-content:center;
+  gap:25px;
+  margin-top:60px;
+  flex-wrap:wrap;
+}
 
-    .btn:hover {
-      transform: scale(1.15);
-      opacity: 0.9;
-    }
+.btn{
+  width:150px;
+  height:150px;
+  border-radius:18px;
+  border:none;
+  cursor:pointer;
+  font-weight:800;
+  font-size:30px;
+  background:rgba(255,255,255,0.95);
+  transition:0.3s;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  color:green;
+}
+.btn:hover{
+  transform:scale(1.06);
+}
+.btn img{
+  width:75px;
+  height:75px;
+  margin-bottom:10px;
+}
 
-    .chatbot {
-      width: 120px;
-      position: absolute;
-      bottom: 20px;
-      right: 20px;
-      cursor: pointer;
-      transition: transform 0.3s ease;
-    }
-    .chatbot:hover { transform: scale(1.1); }
+#chatSupport{
+  position:fixed;
+  bottom:20px;
+  left:20px;
+  z-index:1000;
+cursor:pointer;
+}
 
-    .support {
-      display: none;
-      position: absolute;
-      bottom: 150px;
-      right: 40px;
-      background: white;
-      padding: 15px 20px;
-      border-radius: 15px;
-      box-shadow: 0 4px 15px rgba(0,0,0,0.3);
-      text-align: left;
-      font-size: 0.95rem;
-      animation: fadeIn 0.5s ease;
-    }
+.icon-circle{
+  width:60px;
+  height:60px;
+  border-radius:50%;
+  background:#fff;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+}
+.icon-circle img{
+  width:32px;
+}
 
-    .support h3 { margin: 0 0 10px 0; font-size: 1rem; color: #333; }
-    .support p { margin: 8px 0; color: #333; }
+#supportBox{
+  width:260px;
+  background:#fff;
+  color:#222;
+  border-radius:12px;
+  position:fixed;
+  bottom:95px;
+  left:18px;
+  display:none;
+  box-shadow:0 0 12px rgba(0,0,0,0.3);
+  z-index:1000;
+}
 
-    .support a {
-      text-decoration: none;
-      color: #333;
-    }
-    .support a:hover { color: #3498db; font-weight: bold; }
+.chat-header{
+  background:#222;
+  color:#fff;
+  padding:9px;
+  font-size:0.9rem;
+  text-align:center;
+  border-radius:12px 12px 0 0;
+}
+.chat-body{
+  padding:10px;
+  font-size:0.9rem;
+  line-height:1.6;
+}
+.chat-body a{
+  color:#005c99;
+  text-decoration:none;
+  font-weight:600;
+}
+@keyframes moveBus{
+  0%{ left:-80px; }
+  100%{ left:100%; }
+}
 
-    @keyframes fadeIn {
-      from { opacity: 0; transform: translateY(20px); }
-      to { opacity: 1; transform: translateY(0); }
-    }
-  </style>
+footer{
+  margin-top:auto;
+  text-align:center;
+  padding:15px 10px;
+  font-size:0.8rem;
+  background:rgba(0,0,0,0.55);
+}
+
+@media (max-width:768px){
+  .header h1{font-size:4rem;}
+  .btn{width:140px;height:140px;}
+  .btn img{width:58px;height:58px;}
+}
+
+@media (max-width:480px){
+html, body{
+  width:100%;
+  height:100%;
+}
+
+body{
+  width:100vw;
+  height:100svh;
+  background-image:url('https://www.appikr.com/blog/wp-content/uploads/2022/11/Build-Your-Own-Online-Bus-Ticket-Booking-Ap.jpg');
+  background-repeat:no-repeat;
+  background-position:center center;
+  background-size:cover;
+  background-attachment:scroll;
+  color:#fff;
+  display:flex;
+  flex-direction:column;
+}
+.buttons{
+margin-top:100px;
+}
+
+
+  .header h1{font-size:1.7rem;}
+  .header p{font-size:0.9rem;}
+
+  .btn{width:125px;height:105px;font-size:0.9rem;}
+  .btn img{width:50px;height:50px;}
+
+  #supportBox{
+    width:90%;
+    left:50%;
+    transform:translateX(-50%);
+  }
+
+  #chatSupport{
+    bottom:15px;
+    left:15px;
+  }
+}
+
+</style>
 </head>
+
 <body>
 
-  <div class="content">
-    <h1>Welcome to Varahi Bus</h1>
-    <p>"Travel smart, travel safe. Book your bus journey with ease!"</p>
+<section class="header">
+  <h1>Varahi Bus Booking Platform</h1>
+  <p>Book. Travel. Experience Comfort.</p>
+</section>
+
+<div class="buttons">
+  <button class="btn" onclick="location.href='admin/login.php'">
+    <img src="https://cdn-icons-png.flaticon.com/512/456/456212.png">
+    Admin
+  </button>
+
+  <button class="btn" onclick="location.href='customer/login.php'">
+    <img src="https://cdn-icons-png.flaticon.com/512/1077/1077012.png">
+    Traveller
+  </button>
+</div>
+
+<div id="chatSupport">
+  <div class="icon-circle">
+    <img src="https://cdn-icons-png.flaticon.com/512/561/561127.png">
   </div>
+</div>
 
-  <div class="buttons">
-    <button class="btn btn-admin" onclick="location.href='admin/login.php'">Admin</button>
-    <button class="btn btn-traveller" onclick="location.href='customer/login.php'">Traveller</button>
+<div id="supportBox">
+  <div class="chat-header">Support Contact</div>
+  <div class="chat-body">
+    📞 <b>Mobile:</b> <a href="tel:+917569398385">7569398385</a><br><br>
+    📧 <b>Email:</b> <a href="mailto:rajutandyala369@gmail.com">rajutandyala369@gmail.com</a><br><br>
+    💬 <b>WhatsApp:</b><br>
+    <a href="https://wa.me/917569398385" target="_blank">Tap to Chat on WhatsApp</a>
   </div>
+</div>
+<footer>
+  © 2024 Varahi Bus Booking Platform | Tandyala Raju
+</footer>
 
-  <!-- Support box -->
-  <div class="support" id="supportBox">
-    <h3>Support</h3>
-    <p>📞 <a href="https://wa.me/917569398385" target="_blank">7569398385</a></p>
-    <p>✉️ <a href="mailto:y22cm171@rvrjc.ac.in">y22cm171@rvrjc.ac.in</a></p>
-    <p class="chat">💬 <a href="https://wa.me/917569398385" target="_blank">Chat Now</a></p>
-  </div>
-
-  <!-- Chatbot -->
-  <img src="https://as2.ftcdn.net/v2/jpg/05/65/06/85/1000_F_565068563_jSzYovhlcrwcVTOm05akpqVdZXdoOaNE.jpg"
-       class="chatbot" alt="Chatbot" onclick="toggleSupport()">
-
-  <script>
-    function toggleSupport() {
-      const box = document.getElementById("supportBox");
-      box.style.display = (box.style.display === "block") ? "none" : "block";
-    }
-  </script>
+<script>
+const chatBtn = document.getElementById("chatSupport");
+const supportBox = document.getElementById("supportBox");
+chatBtn.addEventListener("click", (e) => {
+  e.stopPropagation();
+  supportBox.style.display =
+    supportBox.style.display === "block" ? "none" : "block";
+});
+supportBox.addEventListener("click", (e) => {
+  e.stopPropagation();
+});
+document.addEventListener("click", () => {
+  supportBox.style.display = "none";
+});
+</script>
 
 </body>
 </html>
