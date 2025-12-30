@@ -4,7 +4,6 @@ if (session_status() === PHP_SESSION_NONE) {
 }
 include(__DIR__ . '/../include/db_connect.php');
 
-// ✅ Load PHPMailer at the top
 require __DIR__ . '/../include/php_mailer/Exception.php';
 require __DIR__ . '/../include/php_mailer/PHPMailer.php';
 require __DIR__ . '/../include/php_mailer/SMTP.php';
@@ -23,14 +22,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $password = trim($_POST['password']);
     $confirm_password = trim($_POST['confirm_password']);
 
-    // Password validation
     $password_pattern = '/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[\W_]).{8,}$/';
+
     if ($password !== $confirm_password) {
         $message = "Passwords do not match.";
     } elseif (!preg_match($password_pattern, $password)) {
         $message = "Password must be at least 8 characters long, include upper and lower case letters, a number, and a special character.";
     } else {
-        // Check if username, email or phone already exists
         $stmt_check = $conn->prepare("SELECT username, email, phone FROM users WHERE username = ? OR email = ? OR phone = ?");
         $stmt_check->bind_param("sss", $username, $email, $phone);
         $stmt_check->execute();
@@ -51,25 +49,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } elseif ($exists_phone) {
             $message = "Phone number already exists. Please use another phone number.";
         } else {
-            // Hash password
             $hashed_password = password_hash($password, PASSWORD_DEFAULT);
 
-            // Insert user
             $stmt = $conn->prepare("INSERT INTO users (first_name, last_name, username, email, phone, password) VALUES (?, ?, ?, ?, ?, ?)");
             $stmt->bind_param("ssssss", $first_name, $last_name, $username, $email, $phone, $hashed_password);
 
             if ($stmt->execute()) {
                 $registration_success = true;
-                $message = "Registration successful! You can now log in.";
+                $message = "Registration successful!";
 
-                // ✅ Send welcome email
                 $mail = new PHPMailer(true);
                 try {
                     $mail->isSMTP();
                     $mail->Host       = 'smtp.gmail.com';
                     $mail->SMTPAuth   = true;
-                    $mail->Username   = 'varahibusbooking@gmail.com'; // your Gmail
-                    $mail->Password   = 'pjhg nwnt haac nsiu';        // Gmail App Password
+                    $mail->Username   = 'varahibusbooking@gmail.com';
+                    $mail->Password   = 'pjhg nwnt haac nsiu';
                     $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
                     $mail->Port       = 587;
 
@@ -85,8 +80,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         <p>You can now log in and book your bus tickets.</p>
                         <p>Thank you for joining us!</p>
                     ";
-                    $mail->AltBody = "Dear {$first_name} {$last_name},\nWelcome to VarahiBus! Your account has been created.\nUsername: {$username}";
-
+                    $mail->AltBody = "Dear {$first_name} {$last_name}, Welcome to VarahiBus! Username: {$username}";
                     $mail->send();
                 } catch (Exception $e) {
                     error_log("Mailer Error: " . $mail->ErrorInfo);
@@ -99,7 +93,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-// ✅ AJAX username/email/phone availability check
 if (isset($_GET['check_field']) && isset($_GET['value'])) {
     $field = $_GET['check_field'];
     $value = trim($_GET['value']);
@@ -121,240 +114,232 @@ if (isset($_GET['check_field']) && isset($_GET['value'])) {
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <title>Customer Registration</title>
-    <style>
-        body {
-            margin: 0;
-            padding: 0;
-            font-family: 'Poppins', sans-serif;
-            background: rgba(0, 0, 0, 0.5);
-            display: flex;
-            justify-content: center;
-            align-items: flex-start;
-            min-height: 100vh;
-            overflow-y: auto;
-            padding-top: 40px;
-            padding-bottom: 40px;
-        }
-        .bg-video {
-            position: fixed;
-            top: 0; left: 0;
-            width: 100%; height: 100%;
-            object-fit: cover;
-            z-index: -2;
-        }
-.register-box {
-    background: linear-gradient(
-        135deg,
-        #ff0000, #ff7f00, #ffff00, #7fff00, #00ff00
-        );
-    border-radius: 12px;
-    padding: 30px;
-    text-align: center;
-    color: white;
-    width: 450px;
-    box-shadow: 0 4px 15px rgba(0,0,0,0.7);
-    margin-bottom: 40px;
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Customer Registration</title>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+
+<style>
+*{margin:0;padding:0;box-sizing:border-box;font-family:'Poppins',sans-serif;}
+body{
+    background:#e8f0f7;
+    display:flex;
+    justify-content:center;
+    align-items:center;
+    min-height:100vh;
+    padding:15px;
 }
-
-        h2 { margin-bottom: 20px; color: black; }
-        label {
-            display: block;
-            text-align: left;
-            font-size: 0.9rem;
-            margin: 5px 0 3px 0;
-            color: blue;
-        }
-        input, button {
-            width: 100%;
-            padding: 12px;
-            margin: 5px 0 15px 0;
-            border-radius: 5px;
-            border: none;
-            font-size: 1rem;
-        }
-        input {
-            background: rgba(255, 255, 255, 0.8);
-            color: #333;
-        }
-        button {
-            background: linear-gradient(90deg, #ff512f, #dd2476);
-            color: white; cursor: pointer;
-        }
-        button:hover {
-            background: linear-gradient(90deg, #dd2476, #ff512f);
-        }
-        .message { color: green; font-size: 0.9rem; }
-        .success { color: #00ff88; font-size: 0.9rem; }
-        .availability { font-size: 0.8rem; margin-top: -10px; margin-bottom: 10px; }
-        .available { color: green; }
-        .exists { color: red; }
-        .back-btn {
-            position: absolute;
-            top: 20px;
-            right: 30px;
-            background: #111;
-            padding: 10px 20px;
-            color: #ffde59;
-            border-radius: 6px;
-            font-weight: bold;
-            text-decoration: none;
-                       transition: 0.3s ease;
-        }
-        .back-btn:hover {
-            box-shadow: 0 0 20px #ff512f, 0 0 40px #dd2476, 0 0 60px #ff512f;
-        }
-        .password-rules {
-            text-align: left;
-            font-size: 0.8rem;
-            color: blue;
-            margin-top: -5px;
-            margin-bottom: 10px;
-        }
-        .password-rules li { list-style: none; }
-        .valid { color: blue; }
-        .invalid { color: black; }
-        .popup {
-            position: fixed;
-            top: 50%; left: 50%;
-            transform: translate(-50%, -50%);
-            background: #222;
-            color: #fff;
-            padding: 30px;
-            border-radius: 10px;
-            text-align: center;
-            box-shadow: 0 0 20px #000;
-            z-index: 1000;
-        }
-    </style>
+.container{
+    background:#ffffff;
+    border:1px solid #d7e0ea;
+    padding:25px;
+    border-radius:14px;
+    width:100%;
+    max-width:420px;
+    box-shadow:0 4px 15px rgba(0,0,0,0.06);
+    position:relative;
+}
+.container h2{
+    text-align:center;
+    margin-top:40px;
+    margin-bottom:10px;
+    font-weight:700;
+    color:#1e3c57;
+}
+label{font-weight:500;font-size:14px;color:#1e3c57;}
+input{width:100%;padding:11px;border-radius:8px;border:1px solid #b9c7d8;margin-top:6px;outline:none;font-size:15px;}
+input:focus{border-color:#0072ff;}
+input::placeholder{color:#9bb1c7;font-size:14px;}
+button{
+    background:#1e3c57;
+    color:#fff;
+    width:100%;
+    padding:12px;
+    border:none;
+    border-radius:8px;
+    cursor:pointer;
+    margin-top:8px;
+    font-weight:600;
+    font-size:16px;
+}
+button:hover{background:#264a6e;}
+.back-btn{
+    position:absolute;
+    top:18px;
+    right:20px;
+    background:#1e3c57;
+    color:#fff;
+    border:none;
+    font-size:16px;
+    padding:10px 18px;
+    border-radius:8px;
+    cursor:pointer;
+    text-decoration:none;
+    display:flex;
+    align-items:center;
+    gap:6px;
+}
+.back-btn:hover{background:#264a6e;}
+.availability{font-size:0.8rem;margin-bottom:10px;}
+.available{color:green;}
+.exists{color:red;}
+.password-rules{font-size:12px;margin-top:5px;margin-bottom:10px;}
+.valid{color:green;}
+.invalid{color:red;}
+.popup{
+    position:fixed;
+    top:50%;left:50%;
+    transform:translate(-50%,-50%);
+    background:#222;
+    color:#fff;
+    padding:30px;
+    border-radius:10px;
+    text-align:center;
+}
+.popup button{
+    margin-top:15px;
+    padding:8px 18px;
+    background:#ffde59;
+    border:none;
+    border-radius:5px;
+    cursor:pointer;
+    font-weight:bold;
+}
+.message{color:red;text-align:center;margin-bottom:10px;font-weight:bold;}
+.success{color:green;text-align:center;}
+@media(max-width:480px){
+.container{padding:20px;border-radius:12px;}
+button{font-size:15px;padding:11px;}
+.back-btn{padding:8px 15px;font-size:14px;}
+}
+</style>
 </head>
+
 <body>
-<video autoplay muted loop playsinline class="bg-video">
-    <source src="../videos/bus.mp4" type="video/mp4">
-</video>
 
-<a href="login.php" class="back-btn">Back to Login Page</a>
+<div class="container">
+<a href="login.php" class="back-btn"><i class="fa fa-arrow-left"></i> Back</a>
 
-<div class="register-box">
-    <h2>Customer Registration</h2>
-    <?php if ($message): ?>
-        <p class="<?php echo (strpos($message, 'successful') !== false) ? 'success' : 'message'; ?>">
-            <?php echo htmlspecialchars($message); ?>
-        </p>
-    <?php endif; ?>
-    <form method="post" onsubmit="return validateForm()">
-        <label for="first_name">First Name</label>
-        <input type="text" id="first_name" name="first_name" placeholder="Enter First Name" required>
+<h2>Customer Registration</h2>
 
-        <label for="last_name">Last Name</label>
-        <input type="text" id="last_name" name="last_name" placeholder="Enter Last Name" required>
+<?php if($message && !$registration_success): ?>
+<p class="message"><?php echo htmlspecialchars($message); ?></p>
+<?php endif; ?>
 
-        <label for="username">Username</label>
-        <input type="text" id="username" name="username" placeholder="Enter Username" required>
-        <div id="username_status" class="availability"></div>
+<form method="post" onsubmit="return validateForm()">
 
-        <label for="email">Email</label>
-        <input type="email" id="email" name="email" placeholder="Enter Email" required>
-        <div id="email_status" class="availability"></div>
+<label>First Name</label>
+<input type="text" name="first_name" placeholder="Enter first name" required>
 
-        <label for="phone">Phone Number</label>
-        <input type="text" id="phone" name="phone" placeholder="Enter Phone Number" required pattern="[0-9]{10}" title="Enter 10-digit phone number">
-        <div id="phone_status" class="availability"></div>
+<label>Last Name</label>
+<input type="text" name="last_name" placeholder="Enter last name" required>
 
-        <label for="password">Password</label>
-        <input type="password" id="password" name="password" placeholder="Enter Password" required>
-        <ul class="password-rules" id="passwordRules">
-            <li id="length" class="invalid">• At least 8 characters</li>
-            <li id="lowercase" class="invalid">• At least one lowercase letter</li>
-            <li id="uppercase" class="invalid">• At least one uppercase letter</li>
-            <li id="number" class="invalid">• At least one number</li>
-            <li id="special" class="invalid">• At least one special character</li>
-        </ul>
+<label>Username</label>
+<input type="text" id="username" name="username" placeholder="Enter username" required>
+<div id="username_status" class="availability"></div>
 
-        <label for="confirm_password">Confirm Password</label>
-        <input type="password" id="confirm_password" name="confirm_password" placeholder="Confirm Password" required>
+<label>Email</label>
+<input type="email" id="email" name="email" placeholder="Enter email address" required>
+<div id="email_status" class="availability"></div>
 
-        <button type="submit">Sign Up</button>
-    </form>
+<label>Phone</label>
+<input type="text" id="phone" name="phone" placeholder="Enter phone number" required pattern="[0-9]{10}">
+<div id="phone_status" class="availability"></div>
+
+<label>Password</label>
+<input type="password" id="password" name="password" placeholder="Enter password" required>
+
+<ul class="password-rules" id="passwordRules">
+<li id="length" class="invalid">At least 8 characters</li>
+<li id="lowercase" class="invalid">At least one lowercase</li>
+<li id="uppercase" class="invalid">At least one uppercase</li>
+<li id="number" class="invalid">At least one number</li>
+<li id="special" class="invalid">At least one special character</li>
+</ul>
+
+<label>Confirm Password</label>
+<input type="password" id="confirm_password" name="confirm_password" placeholder="Re-enter password" required>
+
+<button type="submit">Sign Up</button>
+</form>
 </div>
 
 <?php if ($registration_success): ?>
 <div class="popup" id="successPopup">
-    <h3>🎉 Registration Successful!</h3>
-    <p>Redirecting to login page in <span id="countdown">5</span> seconds...</p>
+<h3>Registration Successful!</h3>
+<p>Redirecting to login in <span id="countdown">5</span> seconds...</p>
 </div>
 <script>
-    let counter = 5;
-    const countdownEl = document.getElementById('countdown');
-    const interval = setInterval(() => {
-        counter--;
-        countdownEl.textContent = counter;
-        if (counter <= 0) {
-            clearInterval(interval);
-            window.location.href = "login.php";
-        }
-    }, 1000);
+let counter=5;
+const countdownEl=document.getElementById('countdown');
+const interval=setInterval(()=>{
+counter--;
+countdownEl.textContent=counter;
+if(counter<=0){
+clearInterval(interval);
+window.location.href="login.php";
+}
+},1000);
 </script>
 <?php endif; ?>
 
 <script>
-    const passwordInput = document.getElementById('password');
-    const confirmPasswordInput = document.getElementById('confirm_password');
-    const rules = {
-        length: document.getElementById('length'),
-        lowercase: document.getElementById('lowercase'),
-        uppercase: document.getElementById('uppercase'),
-        number: document.getElementById('number'),
-        special: document.getElementById('special')
-    };
+const passwordInput=document.getElementById('password');
+const confirmPasswordInput=document.getElementById('confirm_password');
+const rules={
+length:document.getElementById('length'),
+lowercase:document.getElementById('lowercase'),
+uppercase:document.getElementById('uppercase'),
+number:document.getElementById('number'),
+special:document.getElementById('special')
+};
 
-    passwordInput.addEventListener('input', function () {
-        const value = passwordInput.value;
-        rules.length.className = value.length >= 8 ? 'valid' : 'invalid';
-        rules.lowercase.className = /[a-z]/.test(value) ? 'valid' : 'invalid';
-        rules.uppercase.className = /[A-Z]/.test(value) ? 'valid' : 'invalid';
-        rules.number.className = /\d/.test(value) ? 'valid' : 'invalid';
-        rules.special.className = /[\W_]/.test(value) ? 'valid' : 'invalid';
-    });
+passwordInput.addEventListener('input',()=>{
+const value=passwordInput.value;
+rules.length.className=value.length>=8?'valid':'invalid';
+rules.lowercase.className=/[a-z]/.test(value)?'valid':'invalid';
+rules.uppercase.className=/[A-Z]/.test(value)?'valid':'invalid';
+rules.number.className=/\d/.test(value)?'valid':'invalid';
+rules.special.className=/[\W_]/.test(value)?'valid':'invalid';
+});
 
-    function validateForm() {
-        if (passwordInput.value !== confirmPasswordInput.value) {
-            alert("Passwords do not match!");
-            return false;
-        }
-        const allValid = Object.values(rules).every(rule => rule.classList.contains('valid'));
-        if (!allValid) {
-            alert("Password does not meet all the requirements!");
-            return false;
-        }
-        return true;
-    }
+function validateForm(){
+if(passwordInput.value!==confirmPasswordInput.value){
+alert("Passwords do not match!");
+return false;
+}
+const allValid=Object.values(rules).every(rule=>rule.classList.contains('valid'));
+if(!allValid){
+alert("Password does not meet all requirements!");
+return false;
+}
+return true;
+}
 
-    function checkAvailability(field, value) {
-        if (!value) {
-            document.getElementById(field + "_status").innerHTML = "";
-            return;
-        }
-        fetch("?check_field=" + field + "&value=" + encodeURIComponent(value))
-            .then(res => res.json())
-            .then(data => {
-                const statusEl = document.getElementById(field + "_status");
-                if (data.status === "exists") {
-                    statusEl.innerHTML = field.charAt(0).toUpperCase() + field.slice(1) + " already exists.";
-                    statusEl.className = "availability exists";
-                } else if (data.status === "available") {
-                    statusEl.innerHTML = field.charAt(0).toUpperCase() + field.slice(1) + " is available.";
-                    statusEl.className = "availability available";
-                } else {
-                    statusEl.innerHTML = "";
-                }
-            });
-    }
+function checkAvailability(field,value){
+if(!value){
+document.getElementById(field+"_status").innerHTML="";
+return;
+}
+fetch("?check_field="+field+"&value="+encodeURIComponent(value))
+.then(res=>res.json())
+.then(data=>{
+const statusEl=document.getElementById(field+"_status");
+if(data.status==="exists"){
+statusEl.innerHTML=field+" already exists.";
+statusEl.className="availability exists";
+}else{
+statusEl.innerHTML=field+" is available.";
+statusEl.className="availability available";
+}
+});
+}
 
-    document.getElementById('username').addEventListener('blur', e => checkAvailability('username', e.target.value));
-    document.getElementById('email').addEventListener('blur', e => checkAvailability('email', e.target.value));
-    document.getElementById('phone').addEventListener('blur', e => checkAvailability('phone', e.target.value));
+document.getElementById('username').addEventListener('blur',e=>checkAvailability('username',e.target.value));
+document.getElementById('email').addEventListener('blur',e=>checkAvailability('email',e.target.value));
+document.getElementById('phone').addEventListener('blur',e=>checkAvailability('phone',e.target.value));
 </script>
+
 </body>
 </html>

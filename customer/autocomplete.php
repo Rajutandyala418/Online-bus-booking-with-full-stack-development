@@ -1,5 +1,5 @@
 <?php
-$mysqli = new mysqli('localhost', 'root', '', 'bus_booking');
+$mysqli = new mysqli('sql100.infinityfree.com', 'if0_40602170', 'Raju868820', 'if0_40602170_varahibus');
 if ($mysqli->connect_errno) exit;
 
 $term = $_GET['term'] ?? '';

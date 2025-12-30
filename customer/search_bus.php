@@ -99,26 +99,86 @@ if (!empty($source) && !empty($destination) && !empty($travel_date)) {
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Available Buses</title>
+
 <style>
 /* Your existing CSS here */
 body {
     font-family: 'Poppins', sans-serif;
-    margin: 0; 
+    margin: 0;
     padding: 0;
     color: white;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
     background: url('/y22cm171/bus_booking/images/image3.jpeg') no-repeat center center fixed;
     background-size: cover;
+    overflow-x: hidden;
 }
 
+
 .top-nav { position: fixed; top: 15px; right: 30px; font-weight: 600; color: #0ff; z-index: 1000; }
-table { width: 100%; border-collapse: collapse; margin-top: 100px; max-width: 1300px; margin-left: auto; margin-right: auto; background: rgba(0,0,0,0.6); border-radius: 10px; overflow: hidden; }
+table {
+    width: 95%;
+    max-width: 1300px;
+    margin: 80px auto 20px auto;
+    border-collapse: collapse;
+    background: rgba(0,0,0,0.6);
+    border-radius: 10px;
+    overflow-x: auto;
+    display: block;
+    white-space: nowrap;
+}
+
 th, td { padding: 15px; text-align: center; border-bottom: 1px solid #444; color: white; font-size:20px;}
 th { background: linear-gradient(90deg, #ff512f, #dd2476); }
 .book-btn { background: #ff512f; color: white; padding: 8px 15px; border: none; border-radius: 5px; cursor: pointer; font-weight: 600; text-decoration: none; display: inline-block; transition: background 0.3s ease; }
 .book-btn:hover { background: #dd2476; }
-.back-btn { display: block; width: 180px; margin: 30px auto 50px; padding: 12px 20px; background: linear-gradient(90deg, #ff512f, #dd2476); color: white; text-align: center; text-decoration: none; font-weight: 700; border-radius: 25px; cursor: pointer; transition: transform 0.2s ease; }
+.back-btn {
+    display: block;
+    width: 200px;
+    margin: 20px auto 40px;
+    padding: 12px;
+    background: linear-gradient(90deg, #ff512f, #dd2476);
+    color: white;
+    text-align: center;
+    text-decoration: none;
+    font-weight: 700;
+    border-radius: 25px;
+}
+
 .back-btn:hover { transform: scale(1.05); }
+@media (max-width: 600px) {
+    table {
+        display: block;
+        overflow-x: auto;
+        white-space: nowrap;
+        font-size: 0.85rem;
+    }
+
+    th, td {
+        padding: 10px;
+        font-size: 0.85rem;
+    }
+
+    .book-btn {
+        padding: 6px 12px;
+        font-size: 0.8rem;
+    }
+
+    h1 {
+        font-size: 1.3rem !important;
+        margin-top: 20px !important;
+    }
+
+    .back-btn {
+        width: 55%;
+        padding: 10px;
+        font-size: 0.9rem;
+    }
+}
+
 </style>
 </head>
 <body>
@@ -126,7 +186,7 @@ th { background: linear-gradient(90deg, #ff512f, #dd2476); }
 <div class="top-nav">
 </div>
 
-<h1 style="text-align:center; margin-top: 60px; color : black; font-size : 30px;">
+<h1 style="text-align:center; margin-top: 40px; color: #000; font-size: 2rem;">
     Buses Available from <?php echo htmlspecialchars($source); ?> to <?php echo htmlspecialchars($destination); ?> on <?php echo htmlspecialchars($travel_date); ?>
 </h1>
 

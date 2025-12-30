@@ -9,18 +9,27 @@ use PHPMailer\PHPMailer\PHPMailer;
 use PHPMailer\PHPMailer\Exception;
 require __DIR__ . '/ticket_pdf.php';
 
-// ------------------ Get booking_id from GET ------------------
-$booking_id = isset($_GET['booking_id']) ? (int)$_GET['booking_id'] : 0;
-if (!$booking_id) die("❌ Booking ID missing.");
+session_start(); // start session to read booking_id
+
+// ------------------ Get booking_id ------------------
+if (isset($_GET['booking_id']) && (int)$_GET['booking_id'] > 0) {
+    $booking_id = (int)$_GET['booking_id'];
+} elseif (isset($_SESSION['last_booking_id'])) {
+    $booking_id = $_SESSION['last_booking_id'];
+} else {
+    die("❌ Booking ID missing.");
+}
+
 $coupon = $_GET['coupon'] ?? 'None';
+
 
 // ---------------- Fetch booking + schedule + route + bus + user ----------------
 $stmt = $conn->prepare("
     SELECT b.id AS booking_id, b.booking_date, b.status, b.user_id,
-           b.source, b.destination,   -- ✅ taken from bookings
+           b.source, b.destination,
            s.travel_date, s.departure_time, s.arrival_time,
            bu.bus_name, bu.bus_number,
-           p.amount, p.payment_method, p.payment_status, p.transaction_id,
+           p.payment_method, p.payment_status, p.transaction_id,
            u.username, u.first_name
     FROM bookings b
     LEFT JOIN schedules s ON b.schedule_id = s.id
@@ -31,7 +40,14 @@ $stmt = $conn->prepare("
     LIMIT 1
 ");
 
-// ---------------- Fetch seats linked to booking_id ----------------
+$stmt->bind_param("i", $booking_id);
+$stmt->execute();
+$result = $stmt->get_result();
+if (!$result || $result->num_rows === 0) die("❌ Booking not found.");
+$data = $result->fetch_assoc();
+$stmt->close();
+
+// ---------------- Fetch all seats linked to booking_id ----------------
 $sStmt = $conn->prepare("SELECT seat_number FROM booking_seats WHERE booking_id = ?");
 $sStmt->bind_param("i", $booking_id);
 $sStmt->execute();
@@ -41,25 +57,28 @@ while ($row = $seatResult->fetch_assoc()) {
     $seatNumbers[] = $row['seat_number'];
 }
 $sStmt->close();
+$seat_number = implode(', ', $seatNumbers);
 
-$seat_number = implode(',', $seatNumbers); // ✅ final seat list
-
-$stmt->bind_param("i", $booking_id);
-$stmt->execute();
-$result = $stmt->get_result();
-if (!$result || $result->num_rows === 0) die("❌ Booking not found.");
-$data = $result->fetch_assoc();
-$stmt->close();
-
-// ---------------- Fetch traveller linked to booking_id ----------------
+// ---------------- Fetch all travellers linked to booking_id ----------------
 $tStmt = $conn->prepare("SELECT name, email, phone, gender FROM travellers WHERE booking_id = ?");
 $tStmt->bind_param("i", $booking_id);
 $tStmt->execute();
 $travellerResult = $tStmt->get_result();
-$traveller = $travellerResult->fetch_assoc();
+$travellers = [];
+while ($row = $travellerResult->fetch_assoc()) {
+    $travellers[] = $row;
+}
 $tStmt->close();
 
-// ---------------- Extract details ----------------
+// ---------------- Fetch total fare from payments ----------------
+$pStmt = $conn->prepare("SELECT SUM(amount) as total_amount, payment_method, payment_status, GROUP_CONCAT(transaction_id) AS txn_ids FROM payments WHERE booking_id = ?");
+$pStmt->bind_param("i", $booking_id);
+$pStmt->execute();
+$pResult = $pStmt->get_result();
+$paymentData = $pResult->fetch_assoc();
+$pStmt->close();
+
+// ---------------- Extract booking info ----------------
 $bus_name       = $data['bus_name'];
 $bus_number     = $data['bus_number'];
 $route          = $data['source'] . " → " . $data['destination'];
@@ -67,15 +86,20 @@ $travel_date    = $data['travel_date'];
 $departure      = $data['departure_time'];
 $arrival        = $data['arrival_time'];
 $booking_status = $data['status'];
-$fare           = (float)$data['amount'];
-$payment_method = $data['payment_method'];
-$payment_status = $data['payment_status'];
-$transaction_id = $data['transaction_id'];
+$fare           = (float)$paymentData['total_amount'];
+$payment_method = $paymentData['payment_method'];
+$payment_status = $paymentData['payment_status'];
+$transaction_id = $paymentData['txn_ids'];
 $username       = $data['username'];
 $first_name     = $data['first_name'];
 $booking_date   = $data['booking_date'];
 
 // ---------------- Ticket HTML Message ----------------
+$travellerHTML = '';
+foreach ($travellers as $tr) {
+    $travellerHTML .= "Name: {$tr['name']}\nEmail: {$tr['email']}\nPhone: {$tr['phone']}\nGender: {$tr['gender']}\n────────────────────────\n";
+}
+
 $ticketHTML = "<pre style='font-family:Arial,sans-serif; font-size:14px;'>
 🎫 Bus Ticket
 ────────────────────────
@@ -92,16 +116,12 @@ Arrival: {$arrival}
 Seats: {$seat_number}
 ────────────────────────
 👤 Traveller Details
-Name: {$traveller['name']}
-Email: {$traveller['email']}
-Phone: {$traveller['phone']}
-Gender: {$traveller['gender']}
-────────────────────────
+{$travellerHTML}
 💰 Payment Details
-Base Fare: ₹{$fare}
+Total Fare: ₹{$fare}
 Method: {$payment_method}
 Status: {$payment_status}
-Txn ID: {$transaction_id}
+Txn ID(s): {$transaction_id}
 Coupon: {$coupon}
 ────────────────────────
 🙏 Thank you for booking with Bus Booking System!
@@ -127,8 +147,10 @@ function sendTicketEmail($toEmail, $toName, $subject, $bodyHTML, $booking_id, $c
         $mail->Body = $bodyHTML;
         $mail->AltBody = strip_tags($bodyHTML);
 
-        global $data, $traveller;
-        $pdfContent = generateTicketPDF($data, $traveller, $booking_id, $coupon);
+        global $data, $travellers, $seat_number;
+        $pdfContent = generateTicketPDF($data, $travellers, $booking_id, $coupon, $seat_number,$fare);
+
+
         $mail->addStringAttachment($pdfContent, "BusTicket_$booking_id.pdf");
 
         $mail->send();
@@ -138,18 +160,16 @@ function sendTicketEmail($toEmail, $toName, $subject, $bodyHTML, $booking_id, $c
     }
 }
 
-// ---------------- Auto-send email to traveller ----------------
-// ---------------- Auto-send email to traveller (only once) ----------------
+// ---------------- Auto-send email to primary user (all travellers included) ----------------
 if (!isset($_GET['sent'])) {
-    sendTicketEmail($traveller['email'], $traveller['name'], "Your Bus Ticket - Booking #$booking_id", $ticketHTML, $booking_id, $coupon);
-    // Redirect to same page with sent=1 to prevent resending on refresh
+    sendTicketEmail($travellers[0]['email'], "Traveller", "Your Bus Ticket - Booking #$booking_id", $ticketHTML, $booking_id, $coupon);
     header("Location: booking_success.php?booking_id=$booking_id&coupon=".urlencode($coupon)."&sent=1");
     exit;
 }
 
 // ---------------- WhatsApp message ----------------
 $whatsappMessage = urlencode(strip_tags($ticketHTML));
-$phoneNumber = preg_replace('/[^0-9]/','',$traveller['phone']);
+$phoneNumber = preg_replace('/[^0-9]/','',$travellers[0]['phone']); // first traveller's phone
 $whatsappLink = "https://wa.me/{$phoneNumber}?text={$whatsappMessage}";
 ?>
 
@@ -157,20 +177,121 @@ $whatsappLink = "https://wa.me/{$phoneNumber}?text={$whatsappMessage}";
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Booking Success</title>
 <style>
-body { font-family:'Poppins',sans-serif; background:#111; color:#fff; margin:0; padding:20px; }
+body {
+    font-family:'Poppins',sans-serif;
+    background:#111;
+    color:#fff;
+    margin:0;
+    min-height:100vh;
+    display:flex;
+    justify-content:center;
+    align-items:flex-start;
+    overflow-y:auto;
+    padding:30px 10px;
+}
+
 .top-bar { display:flex; justify-content:space-between; align-items:center; }
-.dashboard-btn { background:#ffde59; padding:10px 20px; border-radius:5px; color:#111; font-weight:bold; text-decoration:none; }
-.container { margin-top:30px; }
-table { width:100%; border-collapse:collapse; margin-bottom:20px; background:rgba(0,0,0,0.4); }
-table, th, td { border:1px solid #555; }
-th, td { padding:10px; text-align:left; }
-th { background:#222; color:#ffde59; width:30%; }
+.dashboard-btn {
+    background:#ffde59;
+    padding:12px 18px;
+    border-radius:25px;
+    color:#111;
+    font-weight:bold;
+    text-decoration:none;
+}
+.dashboard-btn:hover {
+    opacity:0.9;
+}
+
+.container {
+    width:100%;
+    max-width:800px;
+    background:rgba(0,0,0,0.45);
+    border-radius:12px;
+    padding:25px;
+    box-shadow:0 4px 18px rgba(0,0,0,0.4);
+    backdrop-filter:blur(4px);
+}
+
+table {
+    width:100%;
+    border-collapse:collapse;
+    margin-bottom:25px;
+    background:rgba(0,0,0,0.55);
+    border-radius:10px;
+    overflow:hidden;
+}
+
+th, td {
+    padding:12px;
+    border-bottom:1px solid #444;
+    font-size:0.95rem;
+}
+
+th {
+    background:#222;
+    color:#ffde59;
+}
+
 h2,h3 { color:#ffde59; margin-bottom:10px; }
-.btn { background:linear-gradient(90deg,#ff512f,#dd2476); padding:10px 20px; border-radius:5px; text-decoration:none; color:white; font-weight:bold; margin-right:10px; cursor:pointer; border:none; }
-.bottom-btns { margin-top:20px; display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
+.btn {
+    background:linear-gradient(90deg,#ff512f,#dd2476);
+    padding:10px 16px;
+    border-radius:6px;
+    text-decoration:none;
+    color:white;
+    font-weight:bold;
+    border:none;
+    cursor:pointer;
+    display:inline-block;
+}
+
+.bottom-btns {
+    margin-top:20px;
+    display:flex;
+    flex-wrap:wrap;
+    gap:10px;
+    align-items:center;
+    justify-content:center;
+}
+
 input[type=email] { padding:8px; border-radius:5px; border:none; width:220px; }
+@media (max-width: 480px) {
+
+    .container {
+        width:92%;
+        padding:18px;
+    }
+
+    table, th, td {
+        font-size:0.78rem;
+    }
+
+    h2, h3 {
+        font-size:1.2rem;
+    }
+
+    .btn, .dashboard-btn {
+        width:85%;
+        text-align:center;
+        padding:10px;
+        font-size:0.9rem;
+    }
+
+    input[type=email] {
+        width:85%;
+        padding:8px;
+        font-size:0.85rem;
+    }
+
+    .bottom-btns {
+        flex-direction:column;
+    }
+}
+
 </style>
 </head>
 <body>
@@ -200,15 +321,18 @@ input[type=email] { padding:8px; border-radius:5px; border:none; width:220px; }
 <tr><th>Coupon</th><td><?php echo htmlspecialchars($coupon); ?></td></tr>
 <tr><th>Payment Method</th><td><?php echo htmlspecialchars($payment_method); ?></td></tr>
 <tr><th>Payment Status</th><td><?php echo htmlspecialchars($payment_status); ?></td></tr>
-<tr><th>Transaction ID</th><td><?php echo htmlspecialchars($transaction_id); ?></td></tr>
+<tr><th>Transaction ID(s)</th><td><?php echo htmlspecialchars($transaction_id); ?></td></tr>
 </table>
 
 <h3>👤 Traveller Details</h3>
 <table>
-<tr><th>Name</th><td><?php echo htmlspecialchars($traveller['name']); ?></td></tr>
-<tr><th>Email</th><td><?php echo htmlspecialchars($traveller['email']); ?></td></tr>
-<tr><th>Phone</th><td><?php echo htmlspecialchars($traveller['phone']); ?></td></tr>
-<tr><th>Gender</th><td><?php echo htmlspecialchars($traveller['gender']); ?></td></tr>
+<?php foreach ($travellers as $tr): ?>
+<tr><th>Name</th><td><?php echo htmlspecialchars($tr['name']); ?></td></tr>
+<tr><th>Email</th><td><?php echo htmlspecialchars($tr['email']); ?></td></tr>
+<tr><th>Phone</th><td><?php echo htmlspecialchars($tr['phone']); ?></td></tr>
+<tr><th>Gender</th><td><?php echo htmlspecialchars($tr['gender']); ?></td></tr>
+<tr><td colspan="2"><hr></td></tr>
+<?php endforeach; ?>
 </table>
 
 <div class="bottom-btns">
@@ -240,10 +364,11 @@ function sendManualEmail(e){
 </script>
 
 <?php
-// Manual email send
+// Manual email send (all travellers included in one mail)
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['manual_email'])) {
     $manual_email = $_POST['manual_email'];
-    sendTicketEmail($manual_email,$traveller['name'],"Your Bus Ticket - Booking #$booking_id",$ticketHTML,$booking_id,$coupon);
+    sendTicketEmail($manual_email, "Traveller", "Your Bus Ticket - Booking #$booking_id", $ticketHTML, $booking_id, $coupon);
+    echo "Email sent successfully to " . htmlspecialchars($manual_email);
     exit;
 }
 ?>

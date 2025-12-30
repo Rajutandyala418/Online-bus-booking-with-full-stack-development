@@ -15,16 +15,9 @@ $userStmt->close();
 if (!$userRow) die("User not found.");
 
 $user_id = $userRow['id'];
-$user_email = $userRow['email'];
-$user_name = $userRow['first_name'] . ' ' . $userRow['last_name'];
-
 $today = date('Y-m-d');
 
-
-
-
-// ------------------- Fetch Bookings -------------------
-// ------------------- Fetch Bookings -------------------
+// Fetch Bookings
 $query = "
 SELECT b.id AS booking_id, b.status, b.created_at, s.travel_date,
        bu.bus_name, bu.bus_number, b.source, b.destination, 
@@ -36,12 +29,9 @@ JOIN schedules s ON b.schedule_id = s.id
 JOIN buses bu ON s.bus_id = bu.id
 LEFT JOIN payments p ON b.id = p.booking_id
 WHERE b.user_id = ?
-ORDER BY s.travel_date DESC, b.created_at DESC
-";
-
+ORDER BY s.travel_date DESC, b.created_at DESC";
 
 $stmt = $conn->prepare($query);
-if (!$stmt) die("Prepare failed: " . $conn->error);
 $stmt->bind_param("i", $user_id);
 $stmt->execute();
 $result = $stmt->get_result();
@@ -50,37 +40,212 @@ $result = $stmt->get_result();
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
 <title>Booking History</title>
+
+
 <style>
-body, html { margin: 0; padding: 0; font-family: 'Poppins', sans-serif;  color: white; }
-.bg-video { position: fixed; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; z-index: -2; }
-.top-nav { position: absolute; top: 20px; right: 30px; display: flex; gap: 20px; }
-.top-nav a { text-decoration: none; color: #0ff; font-weight: 600; background: rgba(0,0,0,0.5); padding: 10px 18px; border-radius: 5px; }
-.top-nav a:hover { background: rgba(0,0,0,0.8); color: #fff; }
-.container { position: relative; top: 120px; margin: auto; width: 90%; max-width: 1000px; background: rgba(0,0,0,0.6); padding: 20px; border-radius: 10px; }
-h1 { text-align: center; color: #ffde59; }
-table { width: 100%; border-collapse: collapse; margin-top: 10px; }
-th, td { padding: 10px; text-align: center; border-bottom: 1px solid #ddd; }
-th { background: linear-gradient(90deg, #ff512f, #dd2476); color: white; }
-select { padding: 8px; border-radius: 5px; border: none; margin-bottom: 10px; }
-.no-data { text-align: center; color: #ffde59; margin: 15px 0; }
-button.action-btn { padding:5px 10px; margin:2px; border:none; border-radius:5px; cursor:pointer; font-weight:600; }
-th.action-col { min-width: 300px; }
-td.action-col div { display: flex; gap: 5px; justify-content: center; }
-button.cancel { background:red; color:white; }
-button.send { background:green; color:white; }
-button.download { background:blue; color:white; }
-.message-box { padding:10px; margin-bottom:15px; border-radius:5px; text-align:center; color:white; }
-.message-success { background:green; }
-.message-error { background:red; }
+body, html {
+    margin: 0;
+    padding: 0;
+    font-family: 'Poppins', sans-serif;
+    color: white;
+    min-height: 100vh;
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    overflow-x: hidden;
+}
+
+
+/* Top Nav */
+.top-nav {
+    position: fixed;
+    top: 10px;
+    right: 12px;
+    display: flex;
+    gap: 10px;
+    z-index: 1000;
+    color:black;
+background:black;
+
+}
+.top-nav a {
+    padding: 8px 12px;
+    font-size: 1.9rem;
+    border-radius: 6px;
+}
+
+
+/* MAIN CONTAINER (LARGER & CLASSY) */
+.container {
+    width: 100%;
+    max-width: 1200px;
+    margin-top: 110px;
+    background: rgba(0,0,0,0.6);
+    border-radius: 12px;
+    padding: 20px;
+    backdrop-filter: blur(6px);
+}
+
+
+/* Titles */
+h1 {
+    text-align: center;
+    color: #ffde59;
+    font-size: 38px;
+    margin-bottom: 25px;
+}
+
+/* Filter */
+label {
+    font-size: 18px;
+}
+select {
+    padding: 10px 15px;
+    border-radius: 6px;
+    border: none;
+    margin-bottom: 15px;
+    font-size: 16px;
+}
+
+/* Table Wrapper (Mobile scroll) */
+.table-wrapper {
+    width: 100%;
+    overflow-x: auto;
+    scrollbar-width: thin;
+}
+
+
+/* TABLE */
+/* TABLE */
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 10px;
+    min-width: 900px;
+}
+th, td {
+    padding: 8px;
+    font-size: 0.85rem;
+    text-align: center;
+}
+
+th {
+    background: linear-gradient(90deg, #ff512f, #dd2476);
+    color: white;
+}
+
+/* Increase width of Action Column */
+.action-col {
+    min-width: 330px; /* You can increase to 260 or 280 if needed */
+}
+
+.no-data {
+    text-align: center;
+    color: #ffde59;
+    padding: 20px;
+}
+
+/* Actions */
+button.action-btn {
+    padding: 6px 10px;
+    font-size: 0.75rem;
+    border-radius: 6px;
+}
+
+.cancel { background: red; color: white; }
+.send { background: green; color: white; }
+.download { background: blue; color: white; }
+
+td.action-col div { 
+    display: flex; 
+    gap: 5px; 
+
+    justify-content: center; 
+    flex-wrap: wrap;
+}
+
+/* Message box */
+.message-box {
+    padding:12px; 
+    margin-bottom:15px;
+    border-radius:5px;
+    text-align:center;
+    font-size: 18px;
+    font-weight: 600;
+}
+.message-success { background:green; color:white; }
+.message-error { background:red; color:white; }
+
+/* Loader */
+#loader {
+    display: none; /* Hidden by default */
+    position: fixed;
+    top:0; left:0;
+    width:100%; height:100%;
+    background: rgba(0,0,0,0.7);
+    z-index:9999;
+    justify-content:center;
+    align-items:center;
+    flex-direction:column;
+}
+#loader img {
+    width: 150px;
+    margin-bottom: 15px;
+    border-radius: 8px;
+}
+
+
+@media (max-width: 480px) {
+
+    h1 {
+        font-size: 22px;
+        margin-bottom: 15px;
+    }
+
+    table {
+        min-width: 760px;
+    }
+
+    .top-nav a {
+        font-size: 0.75rem;
+        padding: 6px 10px;
+    }
+
+    button.action-btn {
+        width: 80%;
+        font-size: 0.75rem;
+        padding: 6px;
+        border-radius: 4px;
+    }
+
+    .container {
+        padding: 12px;
+        width: 95%;
+        margin-top: 95px;
+    }
+
+    select {
+        width: 100%;
+        padding: 8px;
+        font-size: 0.9rem;
+    }
+
+    th, td {
+        font-size: 0.78rem;
+        padding: 6px;
+    }
+
+}
+
 </style>
 </head>
 <body>
 
-<video autoplay muted loop playsinline class="bg-video">
-    <source src="../videos/bus.mp4" type="video/mp4">
-</video>
+<div id="loader">
+    <img src="https://i0.wp.com/cdn.dribbble.com/users/3593902/screenshots/8852136/media/d3a23c17a7b22b92084e0b202b46fb72.gif">
+    <p>Hold your breath...</p>
+</div>
 
 <div class="top-nav">
     <a href="dashboard.php?username=<?= urlencode($username) ?>">Dashboard</a>
@@ -89,17 +254,16 @@ button.download { background:blue; color:white; }
 <div class="container">
 
 <?php
-// Display email success/error message if exists
 if (isset($_GET['mail_status'])) {
-    $statusClass = $_GET['mail_status'] === 'success' ? 'message-success' : 'message-error';
-    $statusMsg = $_GET['mail_status'] === 'success' ? '✅ Email sent successfully!' : '❌ Failed to send email!';
-    echo "<div class='message-box {$statusClass}'>{$statusMsg}</div>";
+    $cls = $_GET['mail_status'] === 'success' ? 'message-success' : 'message-error';
+    $msg = $_GET['mail_status'] === 'success' ? 'Email sent successfully!' : 'Failed to send email!';
+    echo "<div class='message-box {$cls}'>{$msg}</div>";
 }
 ?>
 
 <h1>Booking History</h1>
 
-<label for="filter">Filter by Status: </label>
+<label for="filter">Filter by Status:</label>
 <select id="filter" onchange="filterTable()">
     <option value="all">All</option>
     <option value="upcoming">Upcoming</option>
@@ -107,6 +271,7 @@ if (isset($_GET['mail_status'])) {
     <option value="cancelled">Cancelled</option>
 </select>
 
+<div class="table-wrapper">
 <table id="bookingTable">
 <tr>
     <th>Booking ID</th>
@@ -115,7 +280,7 @@ if (isset($_GET['mail_status'])) {
     <th>Travel Date</th>
     <th>Status</th>
     <th>Amount</th>
-    <th>Payment Status</th>
+    <th>Payment</th>
     <th>Booked On</th>
     <th class="action-col">Action</th>
 </tr>
@@ -123,12 +288,10 @@ if (isset($_GET['mail_status'])) {
 <?php if ($result->num_rows > 0): ?>
     <?php while ($row = $result->fetch_assoc()): ?>
         <?php
-            $rowStatus = '';
-            if ($row['status'] == 'cancelled') $rowStatus = 'cancelled';
-            elseif ($row['travel_date'] >= $today) $rowStatus = 'upcoming';
-            else $rowStatus = 'past';
+            $statusClass = ($row['status'] == 'cancelled') ? 'cancelled' :
+                           (($row['travel_date'] >= $today) ? 'upcoming' : 'past');
         ?>
-        <tr class="row <?= $rowStatus ?>">
+        <tr class="row <?= $statusClass ?>">
             <td><?= $row['booking_id'] ?></td>
             <td><?= htmlspecialchars($row['bus_name']) ?></td>
             <td><?= htmlspecialchars($row['source']) ?> → <?= htmlspecialchars($row['destination']) ?></td>
@@ -138,45 +301,56 @@ if (isset($_GET['mail_status'])) {
             <td><?= $row['payment_status'] ?></td>
             <td><?= $row['created_at'] ?></td>
             <td class="action-col">
-                <div style="display: flex; gap: 5px; justify-content: center;">
-                    <?php if ($row['status'] != 'cancelled'): ?>
-              <form method="POST" action="cancel_ticket.php" style="margin:0; display:inline;">
-    <input type="hidden" name="username" value="<?= htmlspecialchars($username) ?>">
-    <input type="hidden" name="booking_id" value="<?= $row['booking_id'] ?>">
-    <input type="hidden" name="action" value="cancel">
-    <button type="submit" class="action-btn cancel">Cancel</button>
-</form>
-
-                    <?php endif; ?>
-
-                    <form method="POST" action="send_ticket.php" style="margin:0; display:inline;">
+                <div>
+                    <?php if ($row['status'] !== 'cancelled'): ?>
+                    <form method="POST" action="cancel_ticket.php" style="margin:0;">
                         <input type="hidden" name="username" value="<?= htmlspecialchars($username) ?>">
                         <input type="hidden" name="booking_id" value="<?= $row['booking_id'] ?>">
-                        <button type="submit" class="action-btn send">Send Ticket</button>
+                        <input type="hidden" name="action" value="cancel">
+                        <button class="action-btn cancel">Cancel</button>
+                    </form>
+                    <?php endif; ?>
+
+                    <form method="POST" action="send_ticket.php" style="margin:0;">
+                        <input type="hidden" name="username" value="<?= htmlspecialchars($username) ?>">
+                        <input type="hidden" name="booking_id" value="<?= $row['booking_id'] ?>">
+                        <button class="action-btn send">Send</button>
                     </form>
 
-                    <form method="GET" action="download_ticket1.php" style="margin:0; display:inline;">
+                    <form method="GET" action="download_ticket1.php" style="margin:0;">
                         <input type="hidden" name="booking_id" value="<?= $row['booking_id'] ?>">
-                        <button type="submit" class="action-btn download">Download Ticket</button>
+                        <button class="action-btn download">Download</button>
                     </form>
                 </div>
             </td>
         </tr>
     <?php endwhile; ?>
 <?php else: ?>
-    <tr><td colspan="9" class="no-data">No bookings found.</td></tr>
+<tr><td colspan="9" class="no-data">No bookings found.</td></tr>
 <?php endif; ?>
+
 </table>
+</div>
 </div>
 
 <script>
+// Filtering Function
 function filterTable() {
-    let filter = document.getElementById("filter").value;
-    let rows = document.querySelectorAll("#bookingTable .row");
-    rows.forEach(row => {
-        row.style.display = (filter === "all" || row.classList.contains(filter)) ? "" : "none";
+    let value = document.getElementById('filter').value;
+    document.querySelectorAll('#bookingTable .row').forEach(row => {
+        row.style.display = (value === 'all' || row.classList.contains(value)) ? '' : 'none';
     });
 }
+
+document.addEventListener("DOMContentLoaded", () => {
+    const loader = document.getElementById("loader");
+
+    document.querySelectorAll('form[action="cancel_ticket.php"], form[action="send_ticket.php"]').forEach(form => {
+        form.addEventListener("submit", () => {
+            loader.style.display = "flex";
+        });
+    });
+});
 </script>
 
 </body>

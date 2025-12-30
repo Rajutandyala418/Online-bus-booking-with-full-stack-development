@@ -13,7 +13,7 @@ $stmt = $conn->prepare("
            r.source, r.destination,
            s.travel_date, s.departure_time, s.arrival_time,
            bu.bus_name, bu.bus_number,
-           p.amount, p.payment_method, p.payment_status, p.transaction_id,
+           p.payment_method, p.payment_status, GROUP_CONCAT(p.transaction_id) AS txn_ids, SUM(p.amount) AS total_amount,
            u.username, u.first_name
     FROM bookings b
     LEFT JOIN schedules s ON b.schedule_id = s.id
@@ -22,6 +22,7 @@ $stmt = $conn->prepare("
     LEFT JOIN payments p ON b.id = p.booking_id
     LEFT JOIN users u ON b.user_id = u.id
     WHERE b.id = ?
+    GROUP BY b.id
     LIMIT 1
 ");
 $stmt->bind_param("i", $booking_id);
@@ -41,18 +42,20 @@ while ($row = $seatResult->fetch_assoc()) {
     $seatNumbers[] = $row['seat_number'];
 }
 $sStmt->close();
+$seat_number = implode(', ', $seatNumbers);
 
-$seat_number = implode(',', $seatNumbers); // ✅ Final seat string
-
-// ---------------- Fetch traveller ----------------
+// ---------------- Fetch all travellers ----------------
 $tStmt = $conn->prepare("SELECT name, email, phone, gender FROM travellers WHERE booking_id = ?");
 $tStmt->bind_param("i", $booking_id);
 $tStmt->execute();
 $travellerResult = $tStmt->get_result();
-$traveller = $travellerResult->fetch_assoc();
+$travellers = [];
+while ($row = $travellerResult->fetch_assoc()) {
+    $travellers[] = $row;
+}
 $tStmt->close();
 
-// Extract
+// Extract details
 $bus_name       = $data['bus_name'];
 $bus_number     = $data['bus_number'];
 $route          = $data['source'] . " -- " . $data['destination'];
@@ -60,10 +63,10 @@ $travel_date    = $data['travel_date'];
 $departure      = $data['departure_time'];
 $arrival        = $data['arrival_time'];
 $booking_status = $data['status'];
-$fare           = (float)$data['amount'];
+$fare           = (float)$data['total_amount'];
 $payment_method = $data['payment_method'];
 $payment_status = $data['payment_status'];
-$transaction_id = $data['transaction_id'];
+$transaction_id = $data['txn_ids'];
 $username       = $data['username'];
 $first_name     = $data['first_name'];
 $booking_date   = $data['booking_date'];
@@ -78,7 +81,7 @@ $pdf->SetFont('Arial','B',16);
 $pdf->Cell(190,12,'Varahi Bus Ticket',0,1,'C');
 $pdf->Ln(5);
 
-// -------- Booking Info Row (3 colors) --------
+// Booking Info
 $pdf->SetFont('Arial','B',12);
 $pdf->SetFillColor(173,216,230); 
 $pdf->Cell(63,10,"Booking ID: $booking_id",1,0,'C',true);
@@ -88,7 +91,7 @@ $pdf->SetFillColor(255,255,153);
 $pdf->Cell(64,10,"Status: $booking_status",1,1,'C',true);
 $pdf->Ln(5);
 
-// -------- Function to Draw Table --------
+// Function to Draw Table
 function drawTable($pdf, $title, $dataArr) {
     $pdf->SetFont('Arial','B',14);
     $pdf->SetFillColor(200,200,200);
@@ -104,7 +107,7 @@ function drawTable($pdf, $title, $dataArr) {
     $pdf->Ln(5);
 }
 
-// -------- Bus Details --------
+// Bus Details
 $busDetails = [
     "Bus Name"      => $bus_name,
     "Bus Number"    => $bus_number,
@@ -116,26 +119,39 @@ $busDetails = [
 ];
 drawTable($pdf,"Bus Details",$busDetails);
 
-// -------- Payment Details --------
+// Payment Details
 $paymentDetails = [
     "Fare"          => "Rs. $fare",
     "Coupon"        => $coupon,
     "Method"        => $payment_method,
     "Status"        => $payment_status,
-    "Transaction ID"=> $transaction_id
+    "Transaction ID(s)"=> $transaction_id
 ];
 drawTable($pdf,"Payment Details",$paymentDetails);
 
-// -------- Traveller Details --------
-$travellerDetails = [
-    "Name"   => $traveller['name'],
-    "Gender" => $traveller['gender'],
-    "Email"  => $traveller['email'],
-    "Phone"  => $traveller['phone']
-];
-drawTable($pdf,"Traveller Details",$travellerDetails);
+// Traveller Details - Combine all travellers in ONE table
+// Traveller Details - Proper Table Format
+$pdf->SetFont('Arial','B',14);
+$pdf->SetFillColor(200,200,200);
+$pdf->Cell(190,10,"Traveller Details",1,1,'C',true);
 
-// Output
+$pdf->SetFont('Arial','B',12);
+$pdf->SetFillColor(173,216,230);
+$pdf->Cell(47.5,10,"Name",1,0,'C',true);
+$pdf->Cell(30,10,"Gender",1,0,'C',true);
+$pdf->Cell(60,10,"Email",1,0,'C',true);
+$pdf->Cell(52.5,10,"Phone",1,1,'C',true);
+
+$pdf->SetFont('Arial','',12);
+foreach ($travellers as $tr) {
+    $pdf->SetFillColor(255,255,255);
+    $pdf->Cell(47.5,10,$tr['name'],1,0,'C',true);
+    $pdf->Cell(30,10,$tr['gender'],1,0,'C',true);
+    $pdf->Cell(60,10,$tr['email'],1,0,'C',true);
+    $pdf->Cell(52.5,10,$tr['phone'],1,1,'C',true);
+}
+$pdf->Ln(5);
+
+// Output PDF
 $pdf->Output("D","Bus_Ticket_$booking_id.pdf");
 ?>
-	
