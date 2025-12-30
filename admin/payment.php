@@ -93,62 +93,7 @@ $total_result = $total_stmt->get_result();
 $total_row = $total_result->fetch_assoc();
 $total_payment = $total_row['total_amount'] ?? 0;
 
-if (isset($_GET['download_pdf'])) {
- require_once __DIR__ . '/../fpdf/fpdf.php';
-
-    $pdf = new FPDF();
-    $pdf->AddPage();
-    $pdf->SetFont('Arial','B',12);
-
-    // Header
-    $pdf->Cell(0,10,'Payment Records',0,1,'C');
-    $pdf->Ln(5);
-
-    // Table Header
-    $pdf->SetFont('Arial','B',10);
-    $pdf->SetFillColor(200,200,200);
-    $pdf->Cell(10,8,'ID',1,0,'C',true);
-    $pdf->Cell(30,8,'User Name',1,0,'C',true);
-    $pdf->Cell(40,8,'Email',1,0,'C',true);
-    $pdf->Cell(30,8,'Bus Name',1,0,'C',true);
-    $pdf->Cell(35,8,'Route',1,0,'C',true);
-    $pdf->Cell(20,8,'Departure',1,0,'C',true);
-    $pdf->Cell(20,8,'Arrival',1,0,'C',true);
-    $pdf->Cell(20,8,'Amount',1,0,'C',true);
-    $pdf->Cell(30,8,'Payment Date',1,0,'C',true);
-    $pdf->Cell(20,8,'Status',1,1,'C',true);
-
-    // Table Body
-    $pdf->SetFont('Arial','',10);
-    foreach ($result as $row) {
-        $full_name = $row['first_name'].' '.$row['last_name'];
-        $route = $row['source'].' → '.$row['destination'];
-        $status = $row['payment_status'];
-
-        $pdf->Cell(10,8,$row['id'],1,0,'C');
-        $pdf->Cell(30,8,$full_name,1,0);
-        $pdf->Cell(40,8,$row['email'],1,0);
-        $pdf->Cell(30,8,$row['bus_name'],1,0);
-        $pdf->Cell(35,8,$route,1,0);
-        $pdf->Cell(20,8,$row['departure_time'],1,0);
-        $pdf->Cell(20,8,$row['arrival_time'],1,0);
-        $pdf->Cell(20,8,number_format($row['amount'],2),1,0,'R');
-        $pdf->Cell(30,8,$row['created_at'],1,0,'C');
-        if($status=='Paid'){
-            $pdf->SetTextColor(0,128,0); // green
-        } else {
-            $pdf->SetTextColor(255,0,0); // red
-        }
-        $pdf->Cell(20,8,$status,1,1,'C');
-        $pdf->SetTextColor(0,0,0); // reset to black
-    }
-
-    $pdf->Output('D','payment_records.pdf');
-    exit;
-}
-
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['send_email'])) {
-    require_once __DIR__ . '/../fpdf/fpdf.php';
 
     // Fetch admin email dynamically
     $admin_email_stmt = $conn->prepare("SELECT email FROM admin WHERE id = ?");
@@ -156,55 +101,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['send_email'])) {
     $admin_email_stmt->execute();
     $admin_email_result = $admin_email_stmt->get_result();
     $admin_row = $admin_email_result->fetch_assoc();
-    $admin_email = $admin_row['email'] ?? 'admin@example.com'; // fallback email
+    $admin_email = $admin_row['email'] ?? 'admin@example.com';
 
-    // Generate PDF in landscape
-    $pdf = new FPDF('L','mm','A4');
-    $pdf->AddPage();
-    $pdf->SetFont('Arial','B',12);
-    $pdf->Cell(0,10,'Payment Records',0,1,'C');
-    $pdf->Ln(5);
+    // === Create temporary CSV file ===
+    $file_path = __DIR__ . '/temp_payment.csv';
+    $fp = fopen($file_path, 'w');
+    fputcsv($fp, ['ID', 'User Name', 'Email', 'Bus Name', 'Route', 'Departure', 'Arrival', 'Amount (₹)', 'Payment Date', 'Status']);
 
-    // Table header
-    $pdf->SetFont('Arial','B',10);
-    $pdf->SetFillColor(200,200,200);
-    $col_widths = [10, 25, 35, 30, 35, 20, 20, 20, 25, 20];
-    $headers = ['ID','User Name','Email','Bus Name','Route','Departure','Arrival','Amount','Payment Date','Status'];
-    foreach ($headers as $i => $header) {
-        $pdf->Cell($col_widths[$i],8,$header,1,0,'C',true);
+    mysqli_data_seek($result, 0);
+    while ($row = $result->fetch_assoc()) {
+        $full_name = $row['first_name'] . ' ' . $row['last_name'];
+        $route = $row['source'] . ' → ' . $row['destination'];
+        fputcsv($fp, [
+            $row['id'],
+            $full_name,
+            $row['email'],
+            $row['bus_name'],
+            $route,
+            $row['departure_time'],
+            $row['arrival_time'],
+            $row['amount'],
+            $row['created_at'],
+            $row['payment_status']
+        ]);
     }
-    $pdf->Ln();
+    fclose($fp);
 
-    // Table body
-    $pdf->SetFont('Arial','',9);
-    foreach ($result as $row) {
-        $full_name = $row['first_name'].' '.$row['last_name'];
-        $route = $row['source'].' → '.$row['destination'];
-        $status = $row['payment_status'];
-
-        $pdf->Cell($col_widths[0],8,$row['id'],1,0,'C');
-        $pdf->Cell($col_widths[1],8,$full_name,1,0);
-        $pdf->Cell($col_widths[2],8,$row['email'],1,0);
-        $pdf->Cell($col_widths[3],8,$row['bus_name'],1,0);
-        $pdf->Cell($col_widths[4],8,$route,1,0);
-        $pdf->Cell($col_widths[5],8,$row['departure_time'],1,0);
-        $pdf->Cell($col_widths[6],8,$row['arrival_time'],1,0);
-        $pdf->Cell($col_widths[7],8,number_format($row['amount'],2),1,0,'R');
-        $pdf->Cell($col_widths[8],8,$row['created_at'],1,0,'C');
-
-        // Status color
-        if ($status == 'Paid') $pdf->SetTextColor(0,128,0); // green
-        else $pdf->SetTextColor(255,0,0); // red
-
-        $pdf->Cell($col_widths[9],8,$status,1,1,'C');
-        $pdf->SetTextColor(0,0,0); // reset
-    }
-
-    // Save PDF temporarily
-    $file_path = __DIR__.'/temp_payment.pdf';
-    $pdf->Output($file_path,'F');
-
-    // Send email using PHPMailer
+    // === Send email with CSV attached ===
     $mail = new PHPMailer(true);
     try {
         $mail->isSMTP();
@@ -218,19 +141,52 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['send_email'])) {
         $mail->setFrom('varahibusbooking@gmail.com', 'Varahi Bus Booking');
         $mail->addAddress($admin_email, 'Admin');
 
-        $mail->Subject = "Payment Records PDF";
-        $mail->Body = "Dear Admin,\n\nPlease find attached the payment records PDF.\n\nRegards,\nVarahi Team";
+        $mail->Subject = "Payment Records CSV";
+        $mail->Body = "Dear Admin,\n\nPlease find attached the payment records CSV.\n\nRegards,\nVarahi Team";
         $mail->addAttachment($file_path);
 
         $mail->send();
-        unlink($file_path);
-        echo "<script>alert('Email sent successfully to {$admin_email}');</script>";
+        unlink($file_path); // delete temp file after sending
+        echo "<script>alert('✅ Email sent successfully to {$admin_email} (CSV attached)');</script>";
     } catch (Exception $e) {
-        echo "<script>alert('Email could not be sent: {$mail->ErrorInfo}');</script>";
+        echo "<script>alert('❌ Email could not be sent: {$mail->ErrorInfo}');</script>";
     }
+
     header("Location: payment.php");
     exit();
 }
+
+// ------------------- DOWNLOAD CSV -------------------
+if (isset($_GET['download_file'])) {
+    $filename = "payment_records_" . date("Ymd_His") . ".csv";
+    header('Content-Type: text/csv');
+    header('Content-Disposition: attachment; filename="' . $filename . '"');
+
+    $output = fopen("php://output", "w");
+    fputcsv($output, ['ID', 'User Name', 'Email', 'Bus Name', 'Route', 'Departure', 'Arrival', 'Amount (₹)', 'Payment Date', 'Status']);
+
+    mysqli_data_seek($result, 0); // reset pointer
+    while ($row = $result->fetch_assoc()) {
+        $full_name = $row['first_name'] . ' ' . $row['last_name'];
+        $route = $row['source'] . ' → ' . $row['destination'];
+        fputcsv($output, [
+            $row['id'],
+            $full_name,
+            $row['email'],
+            $row['bus_name'],
+            $route,
+            $row['departure_time'],
+            $row['arrival_time'],
+            $row['amount'],
+            $row['created_at'],
+            $row['payment_status']
+        ]);
+    }
+    fclose($output);
+    exit;
+}
+
+
 
 ?>
 <!DOCTYPE html>
@@ -297,6 +253,126 @@ td.status-failed { color: #FF4500 !important; font-weight: bold; }  /* Failed = 
     transform: scale(1.05);
     background: #dd2476;
 }
+/* ==================== RESPONSIVE MODE (MOBILE + TABLET + DESKTOP) ==================== */
+
+@media (max-width: 1024px) {
+    .container {
+        width: 95%;
+        padding: 15px;
+    }
+    table {
+        font-size: 15px;
+    }
+    #dashboardBtn {
+        font-size: 14px;
+        padding: 8px 14px;
+    }
+}
+
+@media (max-width: 768px) {
+    body {
+        font-size: 14px;
+    }
+
+    .container {
+        padding: 12px;
+        margin-top: 70px;
+        width:95%;
+        border-radius: 8px;
+    }
+
+    /* Filter dropdown full width */
+    #status_filter {
+        width: 100% !important;
+        padding: 12px;
+        font-size: 16px !important;
+        margin-top: 6px;
+    }
+
+    label[for="status_filter"] {
+        display: block;
+        margin-bottom: 5px;
+        font-size: 16px !important;
+    }
+
+    /* Download + Send Email buttons stacked */
+    .container a,
+    .container button {
+        width: 100% !important;
+        display: block;
+        text-align: center;
+        margin-bottom: 10px;
+        font-size: 16px !important;
+        padding: 12px !important;
+    }
+
+    /* Table responsive scroll */
+    table {
+        display: block;
+        overflow-x: auto;
+        white-space: nowrap;
+        font-size: 13px;
+        border-radius: 8px;
+        width:95%;
+    }
+
+    th, td {
+        padding: 8px 6px;
+        font-size: 13px;
+    }
+
+    /* Dashboard button smaller */
+    #dashboardBtn {
+        top: 10px;
+        right: 10px;
+        padding: 7px 12px;
+        font-size: 12px;
+        border-radius: 5px;
+    }
+
+    /* Loader shrink */
+    #loader img {
+        width: 70px;
+    }
+    #loader {
+        font-size: 1.1rem;
+    }
+}
+
+@media (max-width: 480px) {
+    h2 {
+        font-size: 18px;
+    }
+
+    table {
+        font-size: 11px;
+        width:95%;
+    }
+
+    th, td {
+        padding: 6px;
+        font-size: 11px;
+    }
+
+    #dashboardBtn {
+        font-size: 10px;
+        padding: 6px 8px;
+    }
+
+    #status_filter {
+        font-size: 14px !important;
+    }
+
+    .total-payment {
+        font-size: 16px;
+        text-align: center;
+    }
+}
+thead {
+    position: sticky;
+    top: 0;
+    z-index: 99;
+}
 
     </style>
 </head>
@@ -304,6 +380,15 @@ td.status-failed { color: #FF4500 !important; font-weight: bold; }  /* Failed = 
 <video autoplay muted loop class="bg-video">
     <source src="../videos/bus.mp4" type="video/mp4">
 </video>
+<div id="loader" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; 
+    background: rgba(0,0,0,0.7); color:white; z-index:9999; justify-content:center; 
+    align-items:center; flex-direction:column; font-size:1.2rem;">
+    <img src="https://i0.wp.com/cdn.dribbble.com/users/3593902/screenshots/8852136/media/d3a23c17a7b22b92084e0b202b46fb72.gif" 
+         alt="Loading..." style="width:100px; margin-bottom:15px;">
+    Please wait...
+</div>
+
+
 
 <a id="dashboardBtn" href="dashboard.php" title="Go to Dashboard">Dashboard</a>
 
@@ -321,10 +406,11 @@ td.status-failed { color: #FF4500 !important; font-weight: bold; }  /* Failed = 
 <div class="container">
     <!-- ✅ Buttons -->
     <div style="margin-bottom: 15px;">
-        <a href="?download_pdf=1" style="padding:10px 20px; background:#ff512f; color:white; border-radius:5px; text-decoration:none;">Download PDF</a>
-     <form method="post" style="display:inline;">
+<a href="?download_file=1" style="padding:10px 20px; background:#ff512f; color:white; border-radius:5px; text-decoration:none;">Download File</a>
+     <form method="post" style="display:inline;" onsubmit="showLoader()">
     <button type="submit" name="send_email" style="padding:10px 20px; background:#007bff; color:white; border-radius:5px;">Send Email</button>
 </form>
+
 
     </div>
     <table>
@@ -377,6 +463,12 @@ window.onclick = function(event) {
         document.getElementById("profileDropdown").style.display = "none";
     }
 }
+
+function showLoader() {
+    document.getElementById('loader').style.display = 'flex';
+}
+
+
 </script>
 </body>
 </html>

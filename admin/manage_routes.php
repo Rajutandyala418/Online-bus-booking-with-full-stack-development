@@ -200,6 +200,80 @@ if ($admin_id == 3) {
 }
 $stmt->execute();
 $result = $stmt->get_result();
+// === DOWNLOAD CSV OR EMAIL CSV HANDLER ===
+if (isset($_POST['download_csv']) || isset($_POST['email_csv'])) {
+    $csvFile = __DIR__ . "/../tmp/routes_" . date('Ymd_His') . ".csv";
+    $fp = fopen($csvFile, 'w');
+
+    // Headers
+    fputcsv($fp, ['ID', 'Source', 'Destination', 'Fare (₹)', 'Distance (km)', 'Approx Duration']);
+
+    // Fetch data again for CSV
+    if ($admin_id == 3) {
+        $csvQuery = "SELECT id, source, destination, fare, distance_km, approx_duration FROM routes ORDER BY id DESC";
+        $csvStmt = $conn->prepare($csvQuery);
+    } else {
+        $csvQuery = "SELECT id, source, destination, fare, distance_km, approx_duration FROM routes WHERE admin_id = ? ORDER BY id DESC";
+        $csvStmt = $conn->prepare($csvQuery);
+        $csvStmt->bind_param("i", $admin_id);
+    }
+    $csvStmt->execute();
+    $csvResult = $csvStmt->get_result();
+
+    while ($r = $csvResult->fetch_assoc()) {
+        fputcsv($fp, [
+            $r['id'],
+            $r['source'],
+            $r['destination'],
+            number_format($r['fare'], 2),
+            $r['distance_km'],
+            $r['approx_duration']
+        ]);
+    }
+    fclose($fp);
+
+    if (isset($_POST['download_csv'])) {
+        // Force download
+        header('Content-Type: text/csv');
+        header('Content-Disposition: attachment; filename="routes_list.csv"');
+        readfile($csvFile);
+        unlink($csvFile);
+        exit();
+    }
+
+    if (isset($_POST['email_csv'])) {
+        $subject = "Routes List CSV File - Varahi Bus Booking";
+        $body = "Dear {$adminFullName},<br><br>
+                 Please find attached the latest list of your bus routes.<br><br>
+                 Thank you,<br>Varahi Bus Booking System";
+
+        $mail = new PHPMailer(true);
+        try {
+            $mail->isSMTP();
+            $mail->Host       = 'smtp.gmail.com';
+            $mail->SMTPAuth   = true;
+            $mail->Username   = 'varahibusbooking@gmail.com';
+            $mail->Password   = 'pjhg nwnt haac nsiu';
+            $mail->SMTPSecure = 'tls';
+            $mail->Port       = 587;
+
+            $mail->setFrom('varahibusbooking@gmail.com', 'Bus Booking System');
+            $mail->addAddress($adminEmail, $adminFullName);
+            $mail->isHTML(true);
+            $mail->Subject = $subject;
+            $mail->Body    = $body;
+            $mail->addAttachment($csvFile, 'routes_list.csv');
+
+            $mail->send();
+            unlink($csvFile);
+            echo "<script>alert('CSV file has been sent successfully to your email.');</script>";
+        } catch (Exception $e) {
+            unlink($csvFile);
+            echo "<script>alert('Failed to send email: " . addslashes($mail->ErrorInfo) . "');</script>";
+        }
+    }
+}
+
 ?>
 
 <!DOCTYPE html>
@@ -213,6 +287,11 @@ $result = $stmt->get_result();
         body { margin: 0; font-family: Arial, sans-serif; background: #121212; color: white; min-height: 100vh; }
         video.bg-video { position: fixed; right: 0; bottom: 0; min-width: 100%; min-height: 100%; z-index: -1; filter: brightness(0.3); }
         .header { display: flex; justify-content: flex-end; align-items: center; padding: 12px 24px; background: rgba(0, 0, 0, 0.75); position: sticky; top: 0; z-index: 20; }
+.autocomplete-dropdown div:hover {
+    background: #00bfff;
+    color: #000;
+}
+
         .welcome { margin-right: 12px; font-size: 18px; font-weight: 600; }
         .profile-container { position: relative; cursor: pointer; }
         .profile-pic { background: #007bff; width: 40px; height: 40px; border-radius: 50%; color: white; font-weight: bold; font-size: 22px; display: flex; justify-content: center; align-items: center; user-select: none; }
@@ -261,53 +340,354 @@ $result = $stmt->get_result();
     transform: scale(1.05);
     background: #dd2476;
 }
+#loader {
+    display: none; /* hidden by default */
+    position: fixed;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    background: rgba(0,0,0,0.7);
+    z-index: 9999;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    color: #fff;
+    font-size: 1.5rem;
+    text-align: center;
+}
+
+#loader img {
+    width: 150px;
+    margin-bottom: 20px;
+}
+.autocomplete-dropdown {
+    position: absolute;
+    background: #222;
+    color: white;
+    border: 1px solid #555;
+    max-height: 150px;
+    overflow-y: auto;
+    z-index: 1000;
+    display: none;
+    border-radius: 5px;
+}
+.autocomplete-dropdown div {
+    padding: 8px 12px;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+.autocomplete-dropdown div:hover {
+    background: #00bfff;
+    color: #000;
+}
+
+/* ================= MOBILE RESPONSIVE FIXES ================= */
+@media(max-width: 768px) {
+
+    body {
+        font-size: 14px;
+    }
+
+    .container {
+        width: 94%;
+        padding: 15px;
+        margin-top: 90px;
+        margin-bottom: 20px;
+        border-radius: 8px;
+        overflow-x: auto;
+    }
+
+    h2 {
+        font-size: 22px;
+        text-align: center;
+    }
+
+    /* Form becomes stacked */
+    form {
+        grid-template-columns: 1fr !important;
+        gap: 10px;
+    }
+
+    form button {
+        width: 100%;
+        font-size: 15px;
+        padding: 12px;
+        grid-column: span 1 !important;
+    }
+
+    form input {
+        width: 100%;
+        padding: 10px;
+        font-size: 14px;
+    }
+
+    /* CSV buttons stack */
+    #emailCsvForm button,
+    [name="download_csv"] {
+        width: 100% !important;
+        padding: 12px;
+        font-size: 15px;
+        margin-bottom: 10px;
+    }
+
+    /* Table scroll on mobile */
+    table {
+        display: block;
+        overflow-x: auto;
+        white-space: nowrap;
+        font-size: 13px;
+    }
+
+    th, td {
+        padding: 8px;
+        font-size: 13px;
+    }
+
+    /* Action text wrap fix */
+    td a {
+        display: block;
+        margin: 4px 0;
+        font-size: 14px;
+    }
+
+    /* Delete | Update vertical instead of inline */
+    td a:nth-child(2) {
+        margin-top: 6px;
+    }
+
+    /* Dashboard button resize */
+    #dashboardBtn {
+        top: 10px;
+        right: 10px;
+        padding: 8px 14px;
+        font-size: 13px;
+    }
+
+    /* Popup responsive */
+    #updatePopup {
+        width: 90%;
+        max-width: 350px;
+        padding: 15px;
+    }
+
+    #updatePopup input {
+        font-size: 14px;
+        padding: 10px;
+    }
+
+    #updatePopup button {
+        width: 100%;
+        margin-top: 6px;
+        font-size: 14px;
+        padding: 10px;
+    }
+
+    /* Loader scale down */
+    #loader img {
+        width: 90px;
+    }
+    #loader p {
+        font-size: 14px;
+    }
+}
+
     </style>
-    <script>
-        function toggleDropdown() {
-            const dropdown = document.getElementById("profileDropdown");
-            dropdown.style.display = dropdown.style.display === "block" ? "none" : "block";
+<script>
+
+// ✅ Toggle Profile Dropdown
+function toggleDropdown() {
+    const dropdown = document.getElementById("profileDropdown");
+    dropdown.style.display = dropdown.style.display === "block" ? "none" : "block";
+}
+
+window.onclick = function(event) {
+    if (!event.target.closest('.profile-container')) {
+        const dropdown = document.getElementById("profileDropdown");
+        if (dropdown) dropdown.style.display = "none";
+    }
+};
+
+// ✅ Validate Add Route Form
+function validateRouteForm() {
+    let source = document.forms["routeForm"]["source"].value.trim();
+    let destination = document.forms["routeForm"]["destination"].value.trim();
+
+    if (source.toLowerCase() === destination.toLowerCase()) {
+        alert("Source and destination cannot be the same.");
+        return false;
+    }
+    return true;
+}
+
+// ✅ Open Update Popup
+function openUpdatePopup(id, source, destination, fare, distance, duration) {
+    document.getElementById("update_route_id").value = id;
+    document.getElementById("update_source").value = source;
+    document.getElementById("update_destination").value = destination;
+    document.getElementById("update_fare").value = fare;
+    document.getElementById("update_distance_km").value = distance;
+    document.getElementById("update_approx_duration").value = duration;
+    document.getElementById("updatePopup").style.display = "block";
+}
+
+// ✅ Close Update Popup
+function closeUpdatePopup() {
+    document.getElementById("updatePopup").style.display = "none";
+}
+
+// ✅ Confirm delete + Loader
+function confirmDelete(event) {
+    const isConfirmed = confirm('Are you sure you want to delete this route?');
+    if (isConfirmed) {
+        showLoader();
+        return true;
+    }
+    event.preventDefault();
+    hideLoader();
+    return false;
+}
+
+// ✅ Loader functions
+function showLoader() {
+    const loader = document.getElementById("loader");
+    if (loader) loader.style.display = "flex";  // ✅ Correct for flex layout
+}
+
+function hideLoader() {
+    const loader = document.getElementById("loader");
+    if (loader) loader.style.display = "none";
+}
+
+// ✅ Autocomplete Setup
+function setupAutocomplete(inputId, type) {
+    const input = document.getElementById(inputId);
+    let dropdown = document.createElement("div");
+    dropdown.classList.add("autocomplete-dropdown");
+    input.parentNode.style.position = "relative";
+    input.parentNode.appendChild(dropdown);
+
+    input.addEventListener("input", function () {
+        const val = this.value.trim();
+        if (!val) {
+            dropdown.style.display = "none";
+            return;
         }
-        window.onclick = function(event) {
-            if (!event.target.closest('.profile-container')) {
-                const dropdown = document.getElementById("profileDropdown");
-                if (dropdown.style.display === "block") {
+
+        fetch(`fetch_locations.php?term=${encodeURIComponent(val)}&type=${type}`)
+            .then(res => res.json())
+            .then(data => {
+                dropdown.innerHTML = "";
+                if (!data.length) {
                     dropdown.style.display = "none";
+                    return;
                 }
+
+                data.forEach(item => {
+                    const option = document.createElement("div");
+                    option.textContent = item;
+                    option.addEventListener("click", function () {
+                        input.value = item;
+                        dropdown.style.display = "none";
+                    });
+                    dropdown.appendChild(option);
+                });
+                dropdown.style.display = "block";
+            });
+    });
+
+    document.addEventListener("click", function (e) {
+        if (!input.contains(e.target) && !dropdown.contains(e.target)) {
+            dropdown.style.display = "none";
+        }
+    });
+}
+
+// ✅ DOM Loaded
+document.addEventListener("DOMContentLoaded", function () {
+
+    const loader = document.getElementById("loader");
+
+    // Autocomplete for all inputs
+    setupAutocomplete("source", "source");
+    setupAutocomplete("destination", "destination");
+    setupAutocomplete("update_source", "source");
+    setupAutocomplete("update_destination", "destination");
+
+    // ✅ Loader on all form submits
+    document.querySelectorAll("form").forEach(form => {
+        form.addEventListener("submit", function () {
+            loader.style.display = "flex";
+        });
+    });
+
+    // ✅ Loader on all anchor clicks (except JS links)
+    document.querySelectorAll("a").forEach(a => {
+        a.addEventListener("click", function (e) {
+
+            const href = a.getAttribute("href");
+
+            // Allowed: Delete handler (loader already handled)
+            if (a.onclick && a.onclick.toString().includes("confirmDelete")) return;
+
+            if (href && href !== "#" && !href.startsWith("javascript:")) {
+                loader.style.display = "flex";
             }
-        }
-        function validateRouteForm() {
-            let source = document.forms["routeForm"]["source"].value.trim();
-            let destination = document.forms["routeForm"]["destination"].value.trim();
-            if (source.toLowerCase() === destination.toLowerCase()) {
-                alert("Source and destination cannot be the same.");
-                return false;
-            }
-            return true;
-        }
-        function openUpdatePopup(id, source, destination, fare, distance, duration) {
-            document.getElementById("update_route_id").value = id;
-            document.getElementById("update_source").value = source;
-            document.getElementById("update_destination").value = destination;
-            document.getElementById("update_fare").value = fare;
-            document.getElementById("update_distance_km").value = distance;
-            document.getElementById("update_approx_duration").value = duration;
-            document.getElementById("updatePopup").style.display = "block";
-        }
-        function closeUpdatePopup() {
-            document.getElementById("updatePopup").style.display = "none";
-        }
-    </script>
-</head>
+        });
+    });
+
+    // ✅ Email CSV — AJAX with loader
+    const emailCsvForm = document.getElementById("emailCsvForm");
+    if (emailCsvForm) {
+        emailCsvForm.addEventListener("submit", function (e) {
+            e.preventDefault();
+            loader.style.display = "flex";
+
+            const formData = new FormData(emailCsvForm);
+
+            fetch(window.location.href, {
+                method: "POST",
+                body: formData
+            })
+                .then(res => res.text())
+                .then(msg => alert(msg))
+                .catch(() => alert("❌ Failed to send email."))
+                .finally(() => loader.style.display = "none");
+        });
+    }
+});
+
+</script>
+
+
+  </head>
 <body>
     <video autoplay muted loop playsinline class="bg-video">
         <source src="../videos/bus.mp4" type="video/mp4" />
     </video>
 
 <a id="dashboardBtn" href="dashboard.php" title="Go to Dashboard">Dashboard</a>
+<!-- Loader -->
+<div id="loader">
+    <img src="https://i0.wp.com/cdn.dribbble.com/users/3593902/screenshots/8852136/media/d3a23c17a7b22b92084e0b202b46fb72.gif" alt="Loading..." />
+    <p>Please wait Hold your breath...</p>
+</div>
 
     <main class="container">
         <h2>Manage Routes</h2>
-        <form name="routeForm" method="POST" onsubmit="return validateRouteForm()">
+<div style="text-align:center; margin-bottom:15px;">
+    <form method="POST" style="display:inline;">
+        <button type="submit" name="download_csv" style="background:#00cc66; color:white; padding:10px 20px; border:none; border-radius:6px; font-weight:bold; cursor:pointer;">
+            ⬇️ Download CSV
+        </button>
+<form method="POST" id="emailCsvForm" style="display:inline;">
+    <button type="submit" name="email_csv" style="background:#ff6600; color:white; padding:10px 20px; border:none; border-radius:6px; font-weight:bold; cursor:pointer;">
+        ✉️ Email CSV
+    </button>
+</form>
+
+</div>
+
+      <form id="routeForm" name="routeForm" method="POST" onsubmit="return validateRouteForm()">
+
             <div>
                 <label for="source">Source</label>
                 <input type="text" name="source" id="source" placeholder="Enter source" required />
@@ -353,9 +733,11 @@ $result = $stmt->get_result();
                         <td><?php echo htmlspecialchars($row['distance_km']); ?></td>
                         <td><?php echo htmlspecialchars($row['approx_duration']); ?></td>
                         <td>
-                            <a href="manage_routes.php?delete_id=<?php echo $row['id']; ?>" 
-                               class="btn-delete"
-                               onclick="return confirm('Are you sure you want to delete this route?');">Delete</a>
+<a href="manage_routes.php?delete_id=<?= (int)$row['id']; ?>" onclick="return confirmDelete(event);">Delete</a>
+
+
+
+
                             &nbsp; | &nbsp;
                             <a href="javascript:void(0)" style="color:#00ffcc; font-weight:600;"
                                onclick="openUpdatePopup('<?php echo $row['id']; ?>',
@@ -379,8 +761,8 @@ $result = $stmt->get_result();
     <!-- Update Popup -->
     <div id="updatePopup">
         <h3>Update Route</h3>
-        <form method="POST">
-            <input type="hidden" name="update_route_id" id="update_route_id">
+    <form method="POST" id="updateRouteForm">
+    <input type="hidden" name="update_route_id" id="update_route_id">
             <label>Source:</label>
             <input type="text" name="update_source" id="update_source" required>
             <label>Destination:</label>
@@ -397,5 +779,38 @@ $result = $stmt->get_result();
             </div>
         </form>
     </div>
+<!-- Loading animation -->
+<div id="loading" style="
+    display: none;
+    position: fixed;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    background: rgba(255, 255, 255, 0.7);
+    z-index: 9999;
+    text-align: center;
+    justify-content: center;
+    align-items: center;
+">
+    <div style="margin-top: 20%;">
+        <div class="spinner" style="
+            border: 6px solid #f3f3f3;
+            border-top: 6px solid #3498db;
+            border-radius: 50%;
+            width: 60px;
+            height: 60px;
+            animation: spin 1s linear infinite;
+            margin: auto;
+        "></div>
+        <p style="font-size:18px; color:#333;">Sending email, please wait...</p>
+    </div>
+</div>
+
+<style>
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+</style>
+
 </body>
 </html>

@@ -109,125 +109,181 @@ if ($admin_id == 3) {
     $pdf->Cell(0,10,'Booking Records',0,1,'C');
     $pdf->Ln(5);
 
-    $pdf->SetFont('Arial','B',10);
-    $headers = ['ID','User Name','Bus Name','Route','Departure','Arrival','Seat','Booked At'];
-    foreach($headers as $header){
-        $pdf->Cell(25,8,$header,1,0,'C',true);
-    }
-    $pdf->Ln();
+// Set header color
+$pdf->SetFillColor(0, 123, 255); // Blue
+$pdf->SetTextColor(255,255,255); // White
+$headers = ['ID','User Name','Bus Name','Route','Departure','Arrival','Seat','Status','Booked At'];
+foreach($headers as $header){
+    $pdf->Cell(25,8,$header,1,0,'C',true);
+}
+$pdf->Ln();
 
-    $pdf->SetFont('Arial','',9);
-    while($row = $resultPDF->fetch_assoc()){
-        $pdf->Cell(25,8,$row['booking_id'],1,0,'C');
-        $pdf->Cell(25,8,$row['user_name'],1,0);
-        $pdf->Cell(25,8,$row['bus_name'],1,0);
-        $pdf->Cell(30,8,$row['from_location']." → ".$row['to_location'],1,0);
-        $pdf->Cell(20,8,$row['departure_time'],1,0);
-        $pdf->Cell(20,8,$row['arrival_time'],1,0);
-        $pdf->Cell(15,8,$row['seat_number'],1,0);
-        $pdf->Cell(30,8,$row['created_at'],1,1);
-    }
+// Reset for data rows
+$pdf->SetFont('Arial','',9);
+$pdf->SetFillColor(255,255,255);
+$pdf->SetTextColor(0,0,0);
+
+while($row = $resultPDF->fetch_assoc()){
+    $pdf->Cell(25,8,$row['booking_id'],1,0,'C');
+    $pdf->Cell(25,8,$row['user_name'],1,0);
+    $pdf->Cell(25,8,$row['bus_name'],1,0);
+    $pdf->Cell(30,8,$row['from_location']." → ".$row['to_location'],1,0);
+    $pdf->Cell(20,8,$row['departure_time'],1,0);
+    $pdf->Cell(20,8,$row['arrival_time'],1,0);
+    $pdf->Cell(15,8,$row['seat_number'],1,0);
+    $pdf->Cell(20,8,$row['status'],1,0);
+    $pdf->Cell(30,8,$row['created_at'],1,1);
+}
+
     $pdf->Output('D','booking_records.pdf');
     exit();
 }
 
-// ------------- Handle Send Email ----------------
-if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['send_email'])) {
+// ------------- Handle Send Email to Admin ----------------
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['send_email'])) {
     require_once __DIR__ . '/../fpdf/fpdf.php';
 
-    // Fetch fresh booking data
+    // 1. Fetch Admin Email & Name
+    $adminStmt = $conn->prepare("SELECT email, CONCAT(first_name,' ',last_name) AS admin_name FROM admin WHERE id=?");
+    $adminStmt->bind_param("i", $admin_id);
+    $adminStmt->execute();
+    $adminRes = $adminStmt->get_result()->fetch_assoc();
+    $admin_email = $adminRes['email'];
+    $admin_name = $adminRes['admin_name'];
+    $adminStmt->close();
+
+    // 2. Fetch booking data
     $stmtPDF = null;
-   if ($admin_id == 3) {
-    $queryPDF = "SELECT b.id AS booking_id, CONCAT(u.first_name,' ',u.last_name) AS user_name,
-        bs.bus_name, b.source AS from_location, b.destination AS to_location,
-        s.departure_time, s.arrival_time, b.seat_number, b.created_at
-        FROM bookings b
-        JOIN users u ON b.user_id = u.id
-        JOIN schedules s ON b.schedule_id = s.id
-        JOIN buses bs ON s.bus_id = bs.id
-        ORDER BY b.created_at DESC";
-    $stmtPDF = $conn->prepare($queryPDF);
-} else {
-    $queryPDF = "SELECT b.id AS booking_id, CONCAT(u.first_name,' ',u.last_name) AS user_name,
-        bs.bus_name, b.source AS from_location, b.destination AS to_location,
-        s.departure_time, s.arrival_time, b.seat_number, b.created_at
-        FROM bookings b
-        JOIN users u ON b.user_id = u.id
-        JOIN schedules s ON b.schedule_id = s.id
-        JOIN buses bs ON s.bus_id = bs.id
-        WHERE bs.admin_id = ?
-        ORDER BY b.created_at DESC";
-    $stmtPDF = $conn->prepare($queryPDF);
-    $stmtPDF->bind_param("i",$admin_id);
-}
+    if ($admin_id == 3) {
+        $queryPDF = "SELECT b.id AS booking_id, CONCAT(u.first_name,' ',u.last_name) AS user_name,
+            bs.bus_name, b.source AS from_location, b.destination AS to_location,
+            s.departure_time, s.arrival_time, b.seat_number, b.status, b.created_at
+            FROM bookings b
+            JOIN users u ON b.user_id = u.id
+            JOIN schedules s ON b.schedule_id = s.id
+            JOIN buses bs ON s.bus_id = bs.id
+            ORDER BY b.created_at DESC";
+        $stmtPDF = $conn->prepare($queryPDF);
+    } else {
+        $queryPDF = "SELECT b.id AS booking_id, CONCAT(u.first_name,' ',u.last_name) AS user_name,
+            bs.bus_name, b.source AS from_location, b.destination AS to_location,
+            s.departure_time, s.arrival_time, b.seat_number, b.status, b.created_at
+            FROM bookings b
+            JOIN users u ON b.user_id = u.id
+            JOIN schedules s ON b.schedule_id = s.id
+            JOIN buses bs ON s.bus_id = bs.id
+            WHERE bs.admin_id = ?
+            ORDER BY b.created_at DESC";
+        $stmtPDF = $conn->prepare($queryPDF);
+        $stmtPDF->bind_param("i", $admin_id);
+    }
 
     $stmtPDF->execute();
     $resultPDF = $stmtPDF->get_result();
 
-    $pdf = new FPDF();
-    $pdf->AddPage();
-    $pdf->SetFont('Arial','B',12);
-    $pdf->Cell(0,10,'Booking Records',0,1,'C');
-    $pdf->Ln(5);
+    // 3. Generate PDF
+  // ------------- Generate PDF ----------------
+require_once __DIR__ . '/../fpdf/fpdf.php';
 
-    $pdf->SetFont('Arial','B',10);
-    $headers = ['ID','User Name','Bus Name','Route','Departure','Arrival','Seat','Booked At'];
-    foreach($headers as $header){
-        $pdf->Cell(25,8,$header,1,0,'C',true);
-    }
-    $pdf->Ln();
+// $resultPDF is already fetched from DB
 
-    $pdf->SetFont('Arial','',9);
-    while($row = $resultPDF->fetch_assoc()){
-        $pdf->Cell(25,8,$row['booking_id'],1,0,'C');
-        $pdf->Cell(25,8,$row['user_name'],1,0);
-        $pdf->Cell(25,8,$row['bus_name'],1,0);
-        $pdf->Cell(30,8,$row['from_location']." → ".$row['to_location'],1,0);
-        $pdf->Cell(20,8,$row['departure_time'],1,0);
-        $pdf->Cell(20,8,$row['arrival_time'],1,0);
-        $pdf->Cell(15,8,$row['seat_number'],1,0);
-        $pdf->Cell(30,8,$row['created_at'],1,1);
-    }
+$pdf = new FPDF();
+$pdf->AddPage();
+$pdf->SetFont('Arial','B',12);
+$pdf->Cell(0,10,'Booking Records',0,1,'C');
+$pdf->Ln(5);
 
-    $file_path = __DIR__.'/temp_booking.pdf';
-    $pdf->Output($file_path,'F');
+// ---------------- Header Row ----------------
+$pdf->SetFont('Arial','B',10);
+$pdf->SetFillColor(0, 123, 255); // Blue background
+$pdf->SetTextColor(255,255,255); // White text
+$headers = ['ID','User Name','Bus Name','Route','Departure','Arrival','Seat','Status','Booked At'];
+$cellWidths = [15, 30, 25, 40, 20, 20, 15, 20, 30]; // Adjust widths as needed
 
- // 3. Fetch traveller email & name for this booking
-$detailsStmt = $conn->prepare("
-    SELECT u.email, CONCAT(u.first_name,' ',u.last_name) AS user_name,
-           b.source, b.destination
-    FROM bookings b
-    JOIN users u ON b.user_id = u.id
-    WHERE b.id=?
-");
-$detailsStmt->bind_param("i",$booking_id);
-$detailsStmt->execute();
-$res = $detailsStmt->get_result()->fetch_assoc();
-$detailsStmt->close();
+foreach($headers as $i => $header){
+    $pdf->Cell($cellWidths[$i],8,$header,1,0,'C',true);
+}
+$pdf->Ln();
 
-// 4. Send email to traveller (not admin)
-$mail = new PHPMailer(true);
-try {
-    $mail->isSMTP();
-    $mail->Host = 'smtp.gmail.com';
-    $mail->SMTPAuth = true;
-    $mail->Username = 'varahibusbooking@gmail.com';
-    $mail->Password = 'pjhg nwnt haac nsiu';
-    $mail->SMTPSecure = 'tls';
-    $mail->Port = 587;
+// ---------------- Data Rows ----------------
+$pdf->SetFont('Arial','',9);
+$pdf->SetFillColor(255,255,255); // White fill
+$pdf->SetTextColor(0,0,0);       // Black text
 
-    $mail->setFrom('varahibusbooking@gmail.com', 'Varahi Bus Booking');
-    $mail->addAddress($res['email'], $res['user_name']);
-    $mail->Subject = "Booking Cancelled - Varahi Bus";
-    $mail->Body = "Dear {$res['user_name']},\n\nYour booking from {$res['source']} to {$res['destination']} has been cancelled by the admin as per your request.\n\nThank you,\nVarahi Bus Team";
-    $mail->send();
-} catch (Exception $e) {
-    // optional: log error
+while($row = $resultPDF->fetch_assoc()){
+    $pdf->Cell($cellWidths[0],8,$row['booking_id'],1,0,'C');
+    $pdf->Cell($cellWidths[1],8,$row['user_name'],1,0);
+    $pdf->Cell($cellWidths[2],8,$row['bus_name'],1,0);
+    $pdf->Cell($cellWidths[3],8,$row['from_location']." → ".$row['to_location'],1,0);
+    $pdf->Cell($cellWidths[4],8,$row['departure_time'],1,0);
+    $pdf->Cell($cellWidths[5],8,$row['arrival_time'],1,0);
+    $pdf->Cell($cellWidths[6],8,$row['seat_number'],1,0);
+    $pdf->Cell($cellWidths[7],8,$row['status'],1,0);
+    $pdf->Cell($cellWidths[8],8,$row['created_at'],1,1);
 }
 
+// ---------------- Output ----------------
+// For Download PDF
+if(isset($_GET['download_pdf'])){
+    $pdf->Output('D','booking_records.pdf');
+    exit();
+}
+
+// For Email PDF
+$file_path = __DIR__.'/temp_booking.pdf';
+$pdf->Output($file_path,'F');
+
+
+    // 4. Generate HTML table for email
+    $stmtPDF->execute();
+    $resultPDF = $stmtPDF->get_result();
+    $htmlTable = '<table border="1" cellpadding="5" cellspacing="0" style="border-collapse:collapse; width:100%;">';
+    $htmlTable .= '<tr style="background-color:#007bff; color:white;">
+<th>ID</th><th>User Name</th><th>Bus Name</th><th>Route</th><th>Departure</th><th>Arrival</th><th>Seat</th><th>Status</th><th>Booked At</th>
+</tr>';
+    while($row = $resultPDF->fetch_assoc()) {
+        $htmlTable .= '<tr>
+<td>'.$row['booking_id'].'</td>
+<td>'.$row['user_name'].'</td>
+<td>'.$row['bus_name'].'</td>
+<td>'.$row['from_location'].' → '.$row['to_location'].'</td>
+<td>'.$row['departure_time'].'</td>
+<td>'.$row['arrival_time'].'</td>
+<td>'.$row['seat_number'].'</td>
+<td>'.$row['status'].'</td>
+<td>'.$row['created_at'].'</td>
+</tr>';
+    }
+    $htmlTable .= '</table>';
+
+    // 5. Send email to Admin with PDF
+    $mail = new PHPMailer(true);
+    try {
+        $mail->isSMTP();
+        $mail->Host = 'smtp.gmail.com';
+        $mail->SMTPAuth = true;
+        $mail->Username = 'varahibusbooking@gmail.com';
+        $mail->Password = 'pjhg nwnt haac nsiu';
+        $mail->SMTPSecure = 'tls';
+        $mail->Port = 587;
+
+        $mail->setFrom('varahibusbooking@gmail.com', 'Varahi Bus Booking');
+        $mail->addAddress($admin_email, $admin_name);
+        $mail->Subject = "Booking Records - Varahi Bus";
+        $mail->isHTML(true);
+        $mail->Body = "Dear {$admin_name},<br><br>Please find the latest booking records below:<br><br>{$htmlTable}<br><br>The PDF copy is attached for your reference.<br><br>Regards,<br>Varahi Bus Team";
+        $mail->addAttachment($file_path);
+
+        $mail->send();
+    } catch (Exception $e) {
+        error_log("Mail Error: " . $mail->ErrorInfo);
+    }
+
+    // 6. Redirect back
     header("Location: view_bookings.php");
     exit();
 }
+
 
 // ------------- Fetch Bookings for Display ----------------
 // ------------- Fetch Bookings for Display ----------------
@@ -278,6 +334,127 @@ if (!$stmt) {
 
 $stmt->execute();
 $result = $stmt->get_result();
+// ------------- Handle CSV Download -------------
+if (isset($_GET['download_csv']) && $_GET['download_csv'] == 1) {
+    $filename = "bookings_" . date("Ymd_His") . ".csv";
+    $filepath = __DIR__ . "/../tmp/" . $filename;
+
+    $fp = fopen($filepath, 'w');
+    fputcsv($fp, ['Booking ID', 'User Name', 'Bus Name', 'Route', 'Departure', 'Arrival', 'Seat', 'Status', 'Booked At']);
+
+    // Re-fetch same data for CSV
+    $stmt->execute();
+    $resultCSV = $stmt->get_result();
+
+    while ($row = $resultCSV->fetch_assoc()) {
+        // Get seat numbers
+        $seatStmt = $conn->prepare("SELECT seat_number FROM booking_seats WHERE booking_id=?");
+        $seatStmt->bind_param("i", $row['booking_id']);
+        $seatStmt->execute();
+        $seatResult = $seatStmt->get_result();
+        $seatArr = [];
+        while($seatRow = $seatResult->fetch_assoc()){
+            $seatArr[] = $seatRow['seat_number'];
+        }
+        $seat_number = implode(', ', $seatArr);
+        $seatStmt->close();
+
+        fputcsv($fp, [
+            $row['booking_id'],
+            $row['user_name'],
+            $row['bus_name'],
+            $row['from_location'] . " → " . $row['to_location'],
+            $row['departure_time'],
+            $row['arrival_time'],
+            $seat_number,
+            $row['status'],
+            $row['created_at']
+        ]);
+    }
+
+    fclose($fp);
+
+    header('Content-Type: text/csv');
+    header('Content-Disposition: attachment; filename="' . $filename . '"');
+    readfile($filepath);
+    unlink($filepath);
+    exit();
+}
+// ------------- Handle Send CSV via Email -------------
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['send_csv_email'])) {
+    $filename = "bookings_" . date("Ymd_His") . ".csv";
+    $filepath = __DIR__ . "/../tmp/" . $filename;
+
+    $fp = fopen($filepath, 'w');
+    fputcsv($fp, ['Booking ID', 'User Name', 'Bus Name', 'Route', 'Departure', 'Arrival', 'Seat', 'Status', 'Booked At']);
+
+    $stmt->execute();
+    $resultCSV = $stmt->get_result();
+
+    while ($row = $resultCSV->fetch_assoc()) {
+        $seatStmt = $conn->prepare("SELECT seat_number FROM booking_seats WHERE booking_id=?");
+        $seatStmt->bind_param("i", $row['booking_id']);
+        $seatStmt->execute();
+        $seatResult = $seatStmt->get_result();
+        $seatArr = [];
+        while($seatRow = $seatResult->fetch_assoc()){
+            $seatArr[] = $seatRow['seat_number'];
+        }
+        $seat_number = implode(', ', $seatArr);
+        $seatStmt->close();
+
+        fputcsv($fp, [
+            $row['booking_id'],
+            $row['user_name'],
+            $row['bus_name'],
+            $row['from_location'] . " → " . $row['to_location'],
+            $row['departure_time'],
+            $row['arrival_time'],
+            $seat_number,
+            $row['status'],
+            $row['created_at']
+        ]);
+    }
+
+    fclose($fp);
+
+    // Get admin email
+    $adminStmt = $conn->prepare("SELECT email, CONCAT(first_name,' ',last_name) AS admin_name FROM admin WHERE id=?");
+    $adminStmt->bind_param("i", $admin_id);
+    $adminStmt->execute();
+    $adminRes = $adminStmt->get_result()->fetch_assoc();
+    $adminStmt->close();
+
+    $admin_email = $adminRes['email'];
+    $admin_name = $adminRes['admin_name'];
+
+    // Send email with PHPMailer
+    $mail = new PHPMailer(true);
+    try {
+        $mail->isSMTP();
+        $mail->Host = 'smtp.gmail.com';
+        $mail->SMTPAuth = true;
+        $mail->Username = 'varahibusbooking@gmail.com';
+        $mail->Password = 'pjhg nwnt haac nsiu';
+        $mail->SMTPSecure = 'tls';
+        $mail->Port = 587;
+
+        $mail->setFrom('varahibusbooking@gmail.com', 'Varahi Bus Booking');
+        $mail->addAddress($admin_email, $admin_name);
+        $mail->isHTML(true);
+        $mail->Subject = "Booking Records (CSV) - Varahi Bus";
+        $mail->Body = "Dear {$admin_name},<br><br>Please find attached the latest booking records in CSV format.<br><br>Regards,<br>Varahi Bus Team";
+        $mail->addAttachment($filepath);
+        $mail->send();
+    } catch (Exception $e) {
+        error_log("Mail Error: " . $mail->ErrorInfo);
+    }
+
+    unlink($filepath); // cleanup
+    echo "<script>alert('Email sent successfully!'); window.location='view_bookings.php';</script>";
+    exit();
+}
+
 ?>
 
 <!DOCTYPE html>
@@ -360,6 +537,7 @@ $result = $stmt->get_result();
             padding: 20px;
             max-width: 1100px;
             margin: 0 auto;
+            margin-top:80px;
             background: rgba(0, 0, 0, 0.6);
             border-radius: 10px;
             margin-top: 20px;
@@ -401,6 +579,130 @@ $result = $stmt->get_result();
         .status-cancelled { color: #dc3545; font-weight: bold; font-size:20px;}    /* Red */
         .status-failed { color: #6c757d; font-weight: bold; font-size:20px;}       /* Gray */
         .status-completed { color: #007bff; font-weight: bold; font-size:20px;}    /* Blue */
+/* ======================= RESPONSIVE FIX (MOBILE + TABLET + DESKTOP) ======================= */
+
+@media (max-width: 1024px) {
+    .main-content {
+        width: 95%;
+        padding: 15px;
+    }
+    table {
+        font-size: 15px;
+    }
+    #dashboardBtn {
+        font-size: 14px;
+        padding: 8px 14px;
+    }
+}
+
+@media (max-width: 768px) {
+
+    body {
+        font-size: 14px;
+    }
+
+    .main-content {
+        padding: 12px;
+        margin-top: 70px;
+        border-radius: 8px;
+    }
+
+    /* Filter Dropdown full width */
+    #statusFilter {
+        width: 100% !important;
+        padding: 10px;
+        font-size: 16px !important;
+    }
+
+    /* CSV & Send Email Buttons */
+    .main-content a,
+    .main-content form button {
+        width: 100% !important;
+        display: block;
+        text-align: center;
+        margin-bottom: 8px;
+        margin-top:20px;
+        font-size: 16px;
+        padding: 12px !important;
+    }
+
+    /* Table scroll smoothly */
+    table {
+        overflow-x: auto;
+        display: block;
+        white-space: nowrap;
+        font-size: 13px;
+        border-radius: 8px;
+    }
+
+    th, td {
+        padding: 6px;
+        font-size: 13px;
+    }
+
+    /* Action column vertical */
+    td button,
+    td form {
+        width: 100% !important;
+        display: block;
+        text-align: center;
+        margin-top: 6px;
+    }
+
+    /* Dashboard Button shrink */
+    #dashboardBtn {
+        top: 10px;
+        right: 10px;
+        padding: 7px 12px;
+        font-size: 12px;
+        border-radius: 5px;
+    }
+
+    /* Loader resize */
+    #loader img {
+        width: 70px;
+    }
+    #loader {
+        font-size: 1.2rem;
+    }
+}
+
+@media (max-width: 480px) {
+
+    h2 {
+        font-size: 20px;
+    }
+
+    table {
+        font-size: 11px;
+    }
+
+    th, td {
+        font-size: 11px;
+        padding: 5px;
+    }
+
+    #dashboardBtn {
+        font-size: 11px;
+        padding: 6px 9px;
+    }
+
+    .main-content a,
+    .main-content form button {
+        padding: 10px !important;
+        font-size: 14px;
+    }
+
+    #statusFilter {
+        font-size: 14px !important;
+    }
+}
+thead {
+    position: sticky;
+    top: 0;
+    z-index: 9;
+}
+
     </style>
 </head>
 <body>
@@ -409,15 +711,36 @@ $result = $stmt->get_result();
     <source src="../videos/bus.mp4" type="video/mp4">
 </video>
 
+<div id="loader" style="
+    display:none; 
+    position:fixed; 
+    top:0; left:0; 
+    width:100%; height:100%; 
+    background:rgba(0,0,0,0.7); 
+    color:white; 
+    z-index:9999; 
+    justify-content:center; 
+    align-items:center; 
+    flex-direction:column; 
+    font-size:1.5rem;
+">
+    <img src="https://i0.wp.com/cdn.dribbble.com/users/3593902/screenshots/8852136/media/d3a23c17a7b22b92084e0b202b46fb72.gif" 
+         alt="Loading..." style="width:100px; margin-bottom:15px;">
+    Please wait...
+</div>
 
 <div class="main-content">
     <h2>Manage Bookings</h2>
 <div style="margin-bottom: 15px;">
-    <a href="?download_pdf=1" style="padding:10px 20px; background:#ff512f; color:white; border-radius:5px; text-decoration:none;">Download PDF</a>
-    <form method="post" style="display:inline;">
-        <button type="submit" name="send_email" style="padding:10px 20px; background:#007bff; color:white; border-radius:5px;">Send Email</button>
+    <!-- Download CSV -->
+    <a href="?download_csv=1" style="padding:10px 20px; background:#ff512f; color:white; border-radius:5px; text-decoration:none;">Download File</a>
+    
+    <!-- Send Email with CSV -->
+    <form method="post" style="display:inline;" onsubmit="showLoader()">
+        <button type="submit" name="send_csv_email" style="padding:10px 20px; background:#007bff; color:white; border-radius:5px;">Send Email</button>
     </form>
 </div>
+
 
     <table>
 <form method="get" style="margin-bottom: 15px; text-align: right;">
@@ -480,10 +803,11 @@ $seatStmt->close();
                     <td><?php echo htmlspecialchars($row['created_at']); ?></td>
 <td>
     <?php if(strtolower($row['status']) != 'cancelled'): ?>
-        <form method="post" style="display:inline;">
-            <input type="hidden" name="booking_id" value="<?php echo $row['booking_id']; ?>">
-            <button type="submit" name="cancel_booking" style="padding:5px 10px; background:#dc3545; color:white; border-radius:5px;">Cancel</button>
-        </form>
+<form method="post" style="display:inline;" onsubmit="showLoader()">
+    <input type="hidden" name="booking_id" value="<?php echo $row['booking_id']; ?>">
+    <button type="submit" name="cancel_booking" style="padding:5px 10px; background:#dc3545; color:white; border-radius:5px;">Cancel</button>
+</form>
+
     <?php else: ?>
         Cancelled
     <?php endif; ?>
@@ -504,6 +828,9 @@ window.onclick = function(event) {
     if (!event.target.closest('.profile-container')) {
         document.getElementById('profileDropdown').style.display = 'none';
     }
+}
+function showLoader() {
+    document.getElementById('loader').style.display = 'flex';
 }
 </script>
 

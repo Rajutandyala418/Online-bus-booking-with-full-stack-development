@@ -13,7 +13,7 @@ if (!isset($_SESSION['admin_id'])) {
 
 require_once __DIR__ . '/../include/db_connect.php';
 
-// ✅ Include PHPMailer
+// PHPMailer
 require __DIR__ . '/../include/php_mailer/PHPMailer.php';
 require __DIR__ . '/../include/php_mailer/SMTP.php';
 require __DIR__ . '/../include/php_mailer/Exception.php';
@@ -22,7 +22,7 @@ use PHPMailer\PHPMailer\Exception;
 
 $admin_id = $_SESSION['admin_id'];
 
-// Fetch admin details for email
+// Fetch admin details
 $admin_stmt = $conn->prepare("SELECT first_name, last_name, email FROM admin WHERE id = ?");
 $admin_stmt->bind_param("i", $admin_id);
 $admin_stmt->execute();
@@ -30,7 +30,47 @@ $admin_stmt->bind_result($admin_first, $admin_last, $admin_email);
 $admin_stmt->fetch();
 $admin_stmt->close();
 
-// ✅ Email sender function
+// Fetch buses
+$buses_stmt = $conn->prepare("SELECT id, bus_name FROM buses WHERE admin_id = ?");
+$buses_stmt->bind_param("i", $admin_id);
+$buses_stmt->execute();
+$buses_result = $buses_stmt->get_result();
+$all_buses = $buses_result->fetch_all(MYSQLI_ASSOC);
+$buses_stmt->close();
+
+// Fetch routes
+$routes_stmt = $conn->prepare("SELECT id, source, destination FROM routes WHERE admin_id = ?");
+$routes_stmt->bind_param("i", $admin_id);
+$routes_stmt->execute();
+$routes_result = $routes_stmt->get_result();
+$all_routes = $routes_result->fetch_all(MYSQLI_ASSOC);
+$routes_stmt->close();
+
+if ($admin_id == 3) { // Super Admin sees all schedules
+    $schedules_stmt = $conn->prepare("
+        SELECT s.id, s.bus_id, s.route_id, s.travel_date, s.departure_time, s.arrival_time, b.bus_name, r.source, r.destination 
+        FROM schedules s 
+        JOIN buses b ON s.bus_id=b.id 
+        JOIN routes r ON s.route_id=r.id 
+        ORDER BY s.travel_date, s.departure_time
+    ");
+    $schedules_stmt->execute();
+} else { // Other admins see only their schedules
+    $schedules_stmt = $conn->prepare("
+        SELECT s.id, s.bus_id, s.route_id, s.travel_date, s.departure_time, s.arrival_time, b.bus_name, r.source, r.destination 
+        FROM schedules s 
+        JOIN buses b ON s.bus_id=b.id 
+        JOIN routes r ON s.route_id=r.id 
+        WHERE s.admin_id=? 
+        ORDER BY s.travel_date, s.departure_time
+    ");
+    $schedules_stmt->bind_param("i", $admin_id);
+    $schedules_stmt->execute();
+}
+$schedules_result = $schedules_stmt->get_result();
+
+
+// Email function
 function sendScheduleEmail($toEmail, $toName, $subject, $body) {
     $mail = new PHPMailer(true);
     try {
@@ -38,7 +78,7 @@ function sendScheduleEmail($toEmail, $toName, $subject, $body) {
         $mail->Host       = 'smtp.gmail.com';
         $mail->SMTPAuth   = true;
         $mail->Username   = 'varahibusbooking@gmail.com';
-        $mail->Password   = 'pjhg nwnt haac nsiu';  // Gmail App Password
+        $mail->Password   = 'pjhg nwnt haac nsiu'; // App Password
         $mail->SMTPSecure = 'tls';
         $mail->Port       = 587;
 
@@ -52,52 +92,53 @@ function sendScheduleEmail($toEmail, $toName, $subject, $body) {
 
         $mail->send();
     } catch (Exception $e) {
-        // Log errors if needed
+        // Log error if needed
     }
 }
 
-// ------------------ Delete schedule ------------------
+// Delete single schedule
 if (isset($_GET['delete_id'])) { 
     $delete_id = intval($_GET['delete_id']); 
-    $del_stmt = $conn->prepare("DELETE FROM schedules WHERE id = ? AND admin_id = ?"); 
-    $del_stmt->bind_param("ii", $delete_id, $admin_id); 
-    $del_stmt->execute(); 
+    $del_stmt = $conn->prepare("SELECT travel_date FROM schedules WHERE id=? AND admin_id=?");
+    $del_stmt->bind_param("ii",$delete_id,$admin_id);
+    $del_stmt->execute();
+    $del_stmt->bind_result($delete_date);
+    $del_stmt->fetch();
+    $del_stmt->close();
 
-    // ✅ Send email
-    sendScheduleEmail(
-        $admin_email, "$admin_first $admin_last",
-        "Schedule Deleted",
-        "<p>Hello <b>$admin_first</b>,</p><p>Schedule <b>ID $delete_id</b> was deleted on ".date("Y-m-d H:i:s").".</p>"
-    );
+    $del_stmt2 = $conn->prepare("DELETE FROM schedules WHERE id = ? AND admin_id = ?"); 
+    $del_stmt2->bind_param("ii", $delete_id, $admin_id); 
+    $del_stmt2->execute(); 
 
-    header("Location: manage_schedules.php"); 
+    sendScheduleEmail($admin_email, "$admin_first $admin_last", "Schedule Deleted", "<p>Hello <b>$admin_first</b>,</p><p>Schedule <b>ID $delete_id</b> on <b>$delete_date</b> was deleted on ".date("Y-m-d H:i:s").".</p>");
+
+    echo "<script>showLoader();</script>";
+    header("refresh:2;url=manage_schedules.php");
     exit(); 
-} 
+}
 
-// ------------------ Delete all schedules ------------------
+// Delete all schedules
 if (isset($_GET['delete_all'])) {
-    if ($admin_id == 3) {
-        $conn->query("DELETE FROM schedules");
-        $msg = "All schedules deleted by Super Admin.";
+    $start = date("Y-m-d");
+    $endDate = date("Y-m-d", strtotime("+30 days"));
+    if ($admin_id == 3) { // Super Admin
+        $stmt = $conn->prepare("DELETE FROM schedules");
+        $stmt->execute();
+        $msg = "All schedules deleted by Super Admin from $start to $endDate.";
     } else {
         $del_all_stmt = $conn->prepare("DELETE FROM schedules WHERE admin_id = ?");
         $del_all_stmt->bind_param("i", $admin_id);
         $del_all_stmt->execute();
-        $msg = "All your schedules were deleted.";
+        $msg = "All your schedules were deleted from $start to $endDate.";
     }
 
-    // ✅ Send email
-    sendScheduleEmail(
-        $admin_email, "$admin_first $admin_last",
-        "Schedules Deleted",
-        "<p>Hello <b>$admin_first</b>,</p><p>$msg (".date("Y-m-d H:i:s").").</p>"
-    );
-
-    header("Location: manage_schedules.php");
+    sendScheduleEmail($admin_email, "$admin_first $admin_last", "Schedules Deleted", "<p>Hello <b>$admin_first</b>,</p><p>$msg (".date("Y-m-d H:i:s").").</p>");
+    echo "<script>showLoader();</script>";
+    header("refresh:2;url=manage_schedules.php");
     exit();
 }
 
-// ------------------ Add schedule ------------------
+// Add schedule
 if (isset($_POST['add_schedule'])) { 
     $bus_id = $_POST['bus_id']; 
     $route_id = $_POST['route_id']; 
@@ -107,35 +148,32 @@ if (isset($_POST['add_schedule'])) {
 
     if ($travel_type === "by_date") {
         $travel_date = $_POST['travel_date']; 
-        $query = "INSERT INTO schedules (bus_id, route_id, travel_date, departure_time, arrival_time, admin_id) VALUES (?, ?, ?, ?, ?, ?)"; 
-        $stmt = $conn->prepare($query); 
-        $stmt->bind_param("iisssi", $bus_id, $route_id, $travel_date, $departure_time, $arrival_time, $admin_id); 
-        $stmt->execute(); 
+        $stmt = $conn->prepare("INSERT INTO schedules (bus_id, route_id, travel_date, departure_time, arrival_time, admin_id) VALUES (?, ?, ?, ?, ?, ?)");
+        $stmt->bind_param("iisssi", $bus_id, $route_id, $travel_date, $departure_time, $arrival_time, $admin_id);
+        $stmt->execute();
+        $mailBody = "<p>Hello <b>$admin_first</b>,</p><p>You added a new schedule (Bus ID: $bus_id, Route ID: $route_id, Date: $travel_date, Departure: $departure_time, Arrival: $arrival_time) on ".date("Y-m-d H:i:s").".</p>";
     } else if ($travel_type === "everyday") {
         $start_date = $_POST['start_date']; 
         $date = new DateTime($start_date);
+        $dates = [];
         for ($i = 0; $i < 30; $i++) {
             $travel_date = $date->format("Y-m-d");
-            $query = "INSERT INTO schedules (bus_id, route_id, travel_date, departure_time, arrival_time, admin_id) VALUES (?, ?, ?, ?, ?, ?)"; 
-            $stmt = $conn->prepare($query); 
-            $stmt->bind_param("iisssi", $bus_id, $route_id, $travel_date, $departure_time, $arrival_time, $admin_id); 
-            $stmt->execute(); 
+            $stmt = $conn->prepare("INSERT INTO schedules (bus_id, route_id, travel_date, departure_time, arrival_time, admin_id) VALUES (?, ?, ?, ?, ?, ?)");
+            $stmt->bind_param("iisssi", $bus_id, $route_id, $travel_date, $departure_time, $arrival_time, $admin_id);
+            $stmt->execute();
+            $dates[] = $travel_date;
             $date->modify('+1 day');
         }
+        $mailBody = "<p>Hello <b>$admin_first</b>,</p><p>You added a new schedule (Bus ID: $bus_id, Route ID: $route_id, Departure: $departure_time, Arrival: $arrival_time) from <b>".$dates[0]."</b> to <b>".end($dates)."</b> on ".date("Y-m-d H:i:s").".</p>";
     }
 
-    // ✅ Send email
-    sendScheduleEmail(
-        $admin_email, "$admin_first $admin_last",
-        "New Schedule Added",
-        "<p>Hello <b>$admin_first</b>,</p><p>You added a new schedule (Bus ID: $bus_id, Route ID: $route_id, Departure: $departure_time, Arrival: $arrival_time) on ".date("Y-m-d H:i:s").".</p>"
-    );
-
-    header("Location: manage_schedules.php"); 
+    sendScheduleEmail($admin_email, "$admin_first $admin_last", "New Schedule Added", $mailBody);
+    echo "<script>showLoader();</script>";
+    header("refresh:2;url=manage_schedules.php"); 
     exit(); 
 }
 
-// ------------------ Update schedule ------------------
+// Update schedule
 if (isset($_POST['update_schedule'])) {
     $update_id = $_POST['update_schedule_id'];
     $bus_id = $_POST['update_bus_id'];
@@ -144,476 +182,502 @@ if (isset($_POST['update_schedule'])) {
     $departure_time = $_POST['update_departure_time'];
     $arrival_time = $_POST['update_arrival_time'];
 
-    $query = "UPDATE schedules SET bus_id=?, route_id=?, travel_date=?, departure_time=?, arrival_time=? WHERE id=? AND admin_id=?"; 
-    $stmt = $conn->prepare($query);
+    $stmt = $conn->prepare("UPDATE schedules SET bus_id=?, route_id=?, travel_date=?, departure_time=?, arrival_time=? WHERE id=? AND admin_id=?");
     $stmt->bind_param("iisssii", $bus_id, $route_id, $travel_date, $departure_time, $arrival_time, $update_id, $admin_id);
     $stmt->execute();
 
-    // ✅ Send email
-    sendScheduleEmail(
-        $admin_email, "$admin_first $admin_last",
-        "Schedule Updated",
-        "<p>Hello <b>$admin_first</b>,</p><p>Schedule <b>ID $update_id</b> was updated on ".date("Y-m-d H:i:s").".</p>"
-    );
-
-    header("Location: manage_schedules.php");
+    sendScheduleEmail($admin_email, "$admin_first $admin_last", "Schedule Updated", "<p>Hello <b>$admin_first</b>,</p><p>Schedule <b>ID $update_id</b> updated to Date: $travel_date, Departure: $departure_time, Arrival: $arrival_time on ".date("Y-m-d H:i:s").".</p>");
+    echo "<script>showLoader();</script>";
+    header("refresh:2;url=manage_schedules.php"); 
     exit();
 }
+// =================== CSV DOWNLOAD AND EMAIL ===================
+if (isset($_POST['download_csv']) || isset($_POST['email_csv'])) {
+
+    $filename = "schedules_" . date("Ymd_His") . ".csv";
+    $filepath = __DIR__ . "/../tmp/" . $filename;
+
+    $fp = fopen($filepath, 'w');
+    fputcsv($fp, ['ID', 'Bus', 'Route', 'Travel Date', 'Departure Time', 'Arrival Time']);
+
+    if ($admin_id == 3) {
+        $csv_stmt = $conn->prepare("
+            SELECT s.id, b.bus_name, CONCAT(r.source, ' to ', r.destination) AS route_name,
+                   s.travel_date, s.departure_time, s.arrival_time
+            FROM schedules s
+            JOIN buses b ON s.bus_id = b.id
+            JOIN routes r ON s.route_id = r.id
+            ORDER BY s.travel_date, s.departure_time
+        ");
+    } else {
+        $csv_stmt = $conn->prepare("
+            SELECT s.id, b.bus_name, CONCAT(r.source, ' to ', r.destination) AS route_name,
+                   s.travel_date, s.departure_time, s.arrival_time
+            FROM schedules s
+            JOIN buses b ON s.bus_id = b.id
+            JOIN routes r ON s.route_id = r.id
+            WHERE s.admin_id = ?
+            ORDER BY s.travel_date, s.departure_time
+        ");
+        $csv_stmt->bind_param("i", $admin_id);
+    }
+
+    $csv_stmt->execute();
+    $csv_result = $csv_stmt->get_result();
+    while ($row = $csv_result->fetch_assoc()) {
+        fputcsv($fp, $row);
+    }
+    fclose($fp);
+    $csv_stmt->close();
+
+    if (isset($_POST['download_csv'])) {
+        header('Content-Type: text/csv');
+        header('Content-Disposition: attachment; filename="' . $filename . '"');
+        readfile($filepath);
+        unlink($filepath);
+        exit();
+    }
+if (isset($_POST['email_csv'])) {
+    $is_ajax = isset($_POST['ajax']);
+
+
+
+        $mail = new PHPMailer(true);
+        try {
+            $mail->isSMTP();
+            $mail->Host       = 'smtp.gmail.com';
+            $mail->SMTPAuth   = true;
+            $mail->Username   = 'varahibusbooking@gmail.com';
+            $mail->Password   = 'pjhg nwnt haac nsiu';
+            $mail->SMTPSecure = 'tls';
+            $mail->Port       = 587;
+
+            $mail->setFrom('varahibusbooking@gmail.com', 'Bus Booking System');
+            $mail->addAddress($admin_email, "$admin_first $admin_last");
+
+            $mail->Subject = 'Schedules CSV Report';
+            $mail->Body    = "<p>Hello <b>$admin_first</b>,</p><p>Attached is your current schedules report (".date('Y-m-d H:i:s').").</p>";
+            $mail->addAttachment($filepath);
+
+            $mail->send();
+            unlink($filepath);
+if ($is_ajax) {
+    echo "✅ CSV file emailed successfully to $admin_email";
+    exit();
+} else {
+    echo "<script>alert('✅ CSV file emailed successfully to $admin_email');</script>";
+}
+
+        } catch (Exception $e) {
+            echo "<script>alert('❌ Failed to send email: ".$mail->ErrorInfo."');</script>";
+        }
+    }
+}
+
 ?>
 
-
-<!DOCTYPE html> 
-<html> 
-<head> 
-<title>Manage Schedules</title> 
-<link rel="stylesheet" href="../css/styles.css"> 
-<style> 
-body { 
-    margin: 0; 
-    padding: 0; 
-    color: white; 
-    font-family: Arial, sans-serif; 
-} 
-video.bg-video { 
-    position: fixed; 
-    right: 0; 
-    bottom: 0; 
-    min-width: 100%; 
-    min-height: 100%; 
-    z-index: -1; 
-    filter: brightness(0.4); 
-} 
-.header { 
-    display: flex; 
-    justify-content: flex-end; 
-    padding: 10px 20px; 
-    background: rgba(0, 0, 0, 0.7); 
-    align-items: center; 
-    position: relative; 
-} 
-/* Horizontal row for form fields */
-#formFields {
-    display: flex;
-    flex-wrap: wrap; /* wrap if too many fields */
-    gap: 15px;
-    align-items: center;
-    justify-content: flex-start;
-}
-
-/* Make each input/select flexible */
-#formFields input,
-#formFields select {
-    flex: 1 1 150px;
-    padding: 10px 12px;
-    border-radius: 5px;
-    border: 1px solid #555;
-    background-color: white;
-    color: blue;
-    font-size: 14px;
-    box-sizing: border-box;
-}
-
-/* Button row */
-#formButton {
-    display: flex;
+<!DOCTYPE html>
+<html>
+<head>
+<title>Manage Schedules</title>
+<link rel="stylesheet" href="../css/styles.css">
+<style>
+body { margin:0; padding:0; color:white; font-family:Arial,sans-serif; }
+video.bg-video { position:fixed; right:0; bottom:0; min-width:100%; min-height:100%; z-index:-1; filter:brightness(0.4); pointer-events:none; }
+.header { display:flex; justify-content:flex-end; padding:10px 20px; background:rgba(0,0,0,0.7); align-items:center; position:relative; }
+.container { padding:20px; margin-top:50px; }
+form { display:flex; flex-wrap:wrap; gap:20px; background:rgba(0,0,0,0.6); padding:20px; border-radius:10px; }
+form label { flex:1 1 120px; align-self:center; }
+form input, form select { flex:1 1 200px; padding:10px; border-radius:5px; border:none; }
+form button { padding:12px 25px; border-radius:25px; border:none; cursor:pointer; color:white; font-weight:bold; transition:0.3s; }
+table { width:100%; border-collapse:collapse; margin-top:20px; background:rgba(0,0,0,0.6); }
+table, th, td { border:1px solid white; padding:8px; text-align:center; }
+th { background:rgba(255,255,255,0.2); }
+.btn-delete { color:red; text-decoration:none; } .btn-delete:hover { text-decoration:underline; }
+#updatePopup { display:none; position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); background:rgba(30,30,30,0.95); padding:30px 40px; border-radius:15px; z-index:1000; width:500px; max-width:90%; color:white; box-shadow:0 5px 25px rgba(0,0,0,0.5); overflow-y:auto; max-height:90vh; }
+#updatePopup h3 { text-align:center; margin-bottom:20px; color:#00ffcc; }
+#updatePopup input, #updatePopup select { width:100%; padding:10px; margin-bottom:15px; border-radius:5px; border:none; background:#222; color:white; }
+#updatePopup button { padding:10px 25px; border-radius:5px; font-weight:bold; cursor:pointer; }
+#updatePopup button[type="submit"] { background:linear-gradient(135deg,#28a745,#00c6ff); color:white; }
+#updatePopup button[type="button"] { background:linear-gradient(135deg,#ff7f50,#ff4500); color:white; }
+#dashboardBtn { position:fixed; top:20px; right:30px; background:#ff512f; color:white; padding:10px 20px; border-radius:6px; font-weight:bold; cursor:pointer; box-shadow:0 4px 8px rgba(0,0,0,0.3); transition:0.2s; z-index:1001; }
+#dashboardBtn:hover { transform:scale(1.05); background:#dd2476; }
+@media (max-width:900px){ form{flex-direction:column;} form input,form select,form button{width:100%;} }
+#loader {
+    display: none; /* hidden by default */
+    position: fixed;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    background: rgba(0,0,0,0.7);
+    z-index: 9999;
+    flex-direction: column;
     justify-content: center;
-    margin-top: 20px; /* space from form fields */
+    align-items: center;
+    color: #fff;
+    font-size: 1.5rem;
+    text-align: center;
 }
-
-/* Gradient button style */
-#formButton button {
-    padding: 12px 30px;
-    font-size: 16px;
-    font-weight: bold;
-    border: none;
-    border-radius: 25px;
-    cursor: pointer;
-    color: blue;
-    background: linear-gradient(135deg, #28a745, #00c6ff); /* green-blue gradient */
-    transition: all 0.3s ease;
+#loader img {
+    width: 150px;
+    margin-bottom: 20px;
 }
-
-#formButton button:hover {
-    transform: scale(1.05);
-    box-shadow: 0 4px 15px rgba(0,0,0,0.3);
-}
-
-/* Responsive adjustments */
-@media (max-width: 900px) {
-    #formFields {
-        flex-direction: column; /* stack vertically on mobile */
+/* ===================== FULL RESPONSIVE FIX ====================== */
+@media (max-width: 1024px) {
+    .container {
+        width: 95%;
+        padding: 15px;
+        margin-top: 80px;
     }
-    #formFields input,
-    #formFields select {
+
+    table {
+        font-size: 14px;
+    }
+
+    form label {
+        font-size: 14px;
+    }
+}
+
+@media (max-width: 768px) {
+
+    body {
+        font-size: 14px;
+    }
+
+    /* Form becomes stacked */
+    form {
+        flex-direction: column !important;
+        gap: 12px;
         width: 100%;
     }
-}
 
-.welcome { margin-right: 10px; } 
-.profile-container { position: relative; cursor: pointer; } 
-.profile { border-radius: 50%; width: 40px; height: 40px; } 
-.profile-pic { 
-    width: 40px; height: 40px; background: white; color: #007bff; 
-    border-radius: 50%; display: flex; justify-content: center; 
-    align-items: center; font-weight: bold; font-size: 20px; 
-    user-select: none; 
-} 
-.dropdown { 
-    display: none; position: absolute; right: 0; top: 50px; 
-    background: rgba(0,0,0,0.85); border-radius: 5px; 
-    overflow: hidden; min-width: 150px; z-index: 10; 
-} 
-.dropdown a { display: block; padding: 10px; color: white; text-decoration: none; } 
-.dropdown a:hover { background: rgba(255,255,255,0.1); } 
+    form input,
+    form select,
+    form button {
+        width: 100% !important;
+        font-size: 15px;
+    }
 
-.container { 
-    padding: 20px; 
-    margin-top: 50px; /* pushed slightly down */ 
-} 
+    /* CSV buttons full width */
+    #emailCsvBtn,
+    [name="download_csv"] {
+        width: 100% !important;
+        padding: 12px;
+        margin-bottom: 8px;
+    }
 
-table { 
-    width: 100%; background: rgba(0, 0, 0, 0.6); 
-    border-collapse: collapse; margin-top: 20px; 
-} 
-/* Update Popup Styles */
-#updatePopup {
-    display: none;
-    position: fixed;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    background: rgba(30, 30, 30, 0.95); /* dark background */
-    padding: 30px 40px;
-    border-radius: 15px;
-    z-index: 1000;
-    width: 500px; /* desktop width */
-    max-width: 90%; /* responsive width for smaller screens */
-    color: white;
-    box-shadow: 0 5px 25px rgba(0,0,0,0.5);
-    font-family: Arial, sans-serif;
-    overflow-y: auto; /* scroll if content is tall */
-    max-height: 90vh; /* popup won't exceed screen height */
-}
+    /* Table scroll & readable */
+    table {
+        display: block;
+        overflow-x: auto;
+        white-space: nowrap;
+        font-size: 13px;
+        border-radius: 6px;
+    }
 
-/* Heading inside popup */
-#updatePopup h3 {
-    text-align: center;
-    margin-bottom: 20px;
-    color: #00ffcc;
-}
+    th, td {
+        padding: 8px;
+        font-size: 13px;
+        text-align: center;
+    }
 
-/* Inputs and select fields */
-#updatePopup input,
-#updatePopup select {
-    width: 100%;
-    padding: 12px 15px;
-    margin: 8px 0 15px 0;
-    border-radius: 5px;
-    border: 1px solid #555;
-    background-color: #222;
-    color: white;
-    font-size: 16px;
-    box-sizing: border-box;
-}
+    /* Action buttons vertical */
+    td a,
+    td button {
+        display: block;
+        width: 100%;
+        margin: 6px 0;
+        padding: 8px;
+        font-size: 14px;
+    }
 
-/* Buttons inside popup */
-#updatePopup button {
-    padding: 10px 25px;
-    border: none;
-    border-radius: 5px;
-    cursor: pointer;
-    margin: 5px;
-    font-weight: bold;
-    font-size: 16px;
-}
+    /* Dashboard button scale down */
+    #dashboardBtn {
+        top: 10px;
+        right: 10px;
+        padding: 8px 12px;
+        font-size: 13px;
+        border-radius: 5px;
+    }
 
-/* Submit button (update) */
-#updatePopup button[type="submit"] {
-    background-color: #28a745; /* green */
-    color: white;
-}
-
-/* Cancel button */
-#updatePopup button[type="button"] {
-    background-color: #dc3545; /* red */
-    color: white;
-}
-
-/* Responsive adjustments */
-@media (max-width: 600px) {
+    /* Popup full responsive */
     #updatePopup {
-        width: 90%; /* almost full width on mobile */
-        padding: 20px;
+        width: 92% !important;
+        max-height: 90vh;
+        overflow-y: auto;
+        font-size: 14px;
+        padding: 15px;
     }
 
     #updatePopup input,
     #updatePopup select,
     #updatePopup button {
+        width: 100% !important;
+        font-size: 14px;
+        padding: 10px;
+    }
+
+    /* Loader resize */
+    #loader img {
+        width: 80px;
+    }
+    #loader p {
         font-size: 14px;
     }
+}
 
-    #updatePopup button {
-        padding: 8px 15px;
+@media (max-width: 480px) {
+
+    h2 {
+        font-size: 20px;
     }
-}
-/* Apply flex layout to the container */
-#container {
-    display: flex;
-    flex-wrap: wrap; /* allows wrapping if screen is too small */
-    gap: 15px; /* space between fields */
-    align-items: center; /* vertically center inputs */
-    justify-content: flex-start; /* align items to the left */
-}
-      #dashboardBtn {
-    position: fixed;
-    top: 20px;
-    right: 30px;
-    background: #ff512f;
-    color: white;
-    padding: 10px 20px;
-    border-radius: 6px;
-    font-weight: bold;
-    cursor: pointer;
-    box-shadow: 0 4px 8px rgba(0,0,0,0.3);
-    transition: transform 0.2s, background 0.2s;
-    z-index: 1001; /* above other elements */
-}
-#dashboardBtn:hover {
-    transform: scale(1.05);
-    background: #dd2476;
-}
-/* Make each input/select/button flexible */
-#container input,
-#container select,
-#container button {
-    flex: 1 1 150px; /* grow/shrink with min width 150px */
-    padding: 10px 12px;
-    border-radius: 5px;
-    border: 1px solid #555;
-    background-color: #222;
-    color: white;
-    font-size: 14px;
-    box-sizing: border-box;
-}
 
-/* Buttons stay fixed size */
-#container button {
-    flex: 0 0 auto;
-    cursor: pointer;
-}
-#departureRow button:hover {
-    transform: scale(1.05);
-    box-shadow: 0 4px 15px rgba(0,0,0,0.3);
-}
-
-/* Responsive layout for smaller screens */
-@media (max-width: 900px) {
-    #container {
-        flex-direction: column; /* stack vertically on small screens */
+    table {
+        font-size: 12px;
     }
-    #container input,
-    #container select,
-    #container button {
-        width: 100%;
+
+    td button,
+    td a {
+        font-size: 12px;
+        padding: 7px;
+    }
+
+    #dashboardBtn {
+        font-size: 12px;
+        padding: 6px 10px;
     }
 }
 
+</style>
+</head>
+<body onload="toggleDateFields()">
+<video autoplay muted loop class="bg-video">
+    <source src="../videos/bus.mp4" type="video/mp4">
+</video>
+<a id="dashboardBtn" href="dashboard.php">Dashboard</a>
+<div id="loader">
+    <img src="https://i0.wp.com/cdn.dribbble.com/users/3593902/screenshots/8852136/media/d3a23c17a7b22b92084e0b202b46fb72.gif" alt="Loading...">
+    <p>Hold your breath...</p>
+</div>
 
-table, th, td { border: 1px solid white; padding: 8px; } 
-th { background: rgba(255, 255, 255, 0.2); } 
-form { background: rgba(0, 0, 0, 0.6); padding: 15px; border-radius: 5px; } 
-select, input, button { padding: 20px; margin: 15px; color: green; } 
-.btn-delete { color: red; text-decoration: none; } 
-.btn-delete:hover { text-decoration: underline; } 
-.btn-delete-all { color: orange; text-decoration: none; font-weight: bold; } 
-.btn-delete-all:hover { text-decoration: underline; } 
-</style> 
-</head> 
-<body> 
-<video autoplay muted loop class="bg-video"> 
-    <source src="../videos/bus.mp4" type="video/mp4"> 
-</video> 
-<a id="dashboardBtn" href="dashboard.php" title="Go to Dashboard">Dashboard</a>
+<div class="container">
+    <h2>Manage Schedules</h2>
+<div style="margin-top: 15px; margin-bottom: 20px;">
+    <form method="POST" style="display:inline;">
+        <button type="submit" name="download_csv" style="background:#007bff; color:white; padding:10px 20px; border:none; border-radius:6px; font-weight:bold; cursor:pointer;">
+            📥 Download CSV
+        </button>
+    </form>
+<form id="emailCsvForm" style="display:inline;">
+    <button type="button" id="emailCsvBtn" style="background:#ff6600; color:white; padding:10px 20px; border:none; border-radius:6px; font-weight:bold; cursor:pointer;">
+        ✉️ Email CSV
+    </button>
+</form>
 
-<div class="container"> 
-    <h2>Manage Schedules</h2> 
 
-    <form method="POST"> 
-    <div id="formFields">
-    <label>Select Bus:</label>
-    <select name="bus_id" id="bus_id" required>
+</div>
+
+   <form method="POST">
+
+<div>
+    <label>Bus:</label>
+    <select name="bus_id" required>
         <option value="">Select Bus</option>
-        <?php 
-        $buses->execute(); 
-        $buses_result = $buses->get_result(); 
-        while ($bus = $buses_result->fetch_assoc()) { ?> 
-            <option value="<?php echo $bus['id']; ?>"><?php echo htmlspecialchars($bus['bus_name']); ?></option> 
-        <?php } ?> 
-    </select> 
-
-    <label>Select Route:</label>
-    <select name="route_id" id="route_id" required>
-        <option value="">Select Route</option>
-        <?php 
-        $routes->execute(); 
-        $routes_result = $routes->get_result(); 
-        while ($route = $routes_result->fetch_assoc()) { ?> 
-            <option value="<?php echo $route['id']; ?>"> 
-                <?php echo htmlspecialchars($route['source'] . " to " . $route['destination']); ?> 
-            </option> 
-        <?php } ?> 
+        <?php foreach($all_buses as $bus): ?>
+        <option value="<?= $bus['id'] ?>"><?= htmlspecialchars($bus['bus_name']) ?></option>
+        <?php endforeach; ?>
     </select>
 
+    <label>Route:</label>
+    <select name="route_id" required>
+        <option value="">Select Route</option>
+        <?php foreach($all_routes as $route): ?>
+        <option value="<?= $route['id'] ?>"><?= htmlspecialchars($route['source'].' to '.$route['destination']) ?></option>
+        <?php endforeach; ?>
+    </select>
+</div>
+
+<div>
     <label>Travel Type:</label>
     <select name="travel_type" id="travel_type" onchange="toggleDateFields()" required>
         <option value="by_date">By Date</option>
         <option value="everyday">Everyday</option>
     </select>
 
-    <div id="byDateField">
-        <label>Travel Date:</label>
-        <input type="date" name="travel_date">
-    </div>
+    <label id="travel_date_label">Travel Date:</label>
+  <input type="date" name="travel_date" id="travel_date" required min="<?= date('Y-m-d') ?>">
+<input type="date" name="start_date" id="start_date" style="display:none;" min="<?= date('Y-m-d') ?>">
 
-    <div id="everydayFields" style="display:none;">
-        <label>Start Date:</label>
-        <input type="date" name="start_date">
-    </div>
 </div>
 
-<!-- Second Row: Departure + Buttons -->
-<div id="buttonRow" style="display:flex; align-items:center; gap:15px; margin-top:10px; flex-wrap:wrap;">
-<label for="departure_time">Departure Time:</label>
-<input type="time" name="departure_time" id="departure_time" required>
+<div>
+    <label>Departure Time:</label>
+    <input type="time" name="departure_time" required>
+    <label>Arrival Time:</label>
+    <input type="time" name="arrival_time" required>
+</div>
 
-<label for="arrival_time">Arrival Time:</label>
-<input type="time" name="arrival_time" id="arrival_time" required>
+<div>
+    <button type="submit" name="add_schedule" style="background:#28a745;">Add Schedule</button>
+    <button type="button" onclick="if(confirm('Delete all schedules?')){ window.location='?delete_all=1'; }" style="background:#ff4500;">Delete All</button>
+</div>
+</form>
 
+<table>
+    <thead>
+        <tr>
+            <th>ID</th>
+            <th>Bus</th>
+            <th>Route</th>
+            <th>Travel Date</th>
+            <th>Departure</th>
+            <th>Arrival</th>
+            <th>Action</th>
+        </tr>
+    </thead>
+    <tbody>
+        <?php while($row=$schedules_result->fetch_assoc()): ?>
+        <tr>
+            <td><?= $row['id'] ?></td>
+            <td><?= htmlspecialchars($row['bus_name']) ?></td>
+            <td><?= htmlspecialchars($row['source'].' to '.$row['destination']) ?></td>
+            <td><?= htmlspecialchars($row['travel_date']) ?></td>
+            <td><?= htmlspecialchars($row['departure_time']) ?></td>
+            <td><?= htmlspecialchars($row['arrival_time']) ?></td>
+            <td>
+                <a class="btn-delete" href="?delete_id=<?= $row['id'] ?>" onclick="return confirm('Delete this schedule?')">Delete</a>
+                <button type="button" onclick="openUpdatePopup('<?= $row['id'] ?>','<?= $row['bus_id'] ?>','<?= $row['route_id'] ?>','<?= $row['travel_date'] ?>','<?= $row['departure_time'] ?>','<?= $row['arrival_time'] ?>')">Update</button>
+            </td>
+        </tr>
+        <?php endwhile; ?>
+    </tbody>
+</table>
 
-    <button type="submit" name="add_schedule" style="background: linear-gradient(135deg, #28a745, #00c6ff); color:white; font-weight:bold; padding:12px 25px; border:none; border-radius:25px; cursor:pointer; transition: all 0.3s ease;">
-        Add Schedule
-    </button>
-
-    <button type="button" onclick="if(confirm('Are you sure you want to delete ALL schedules?')){ window.location='?delete_all=1'; }" style="background: linear-gradient(135deg, #ff7f50, #ff4500); color:white; font-weight:bold; padding:12px 25px; border:none; border-radius:25px; cursor:pointer; transition: all 0.3s ease;">
-        Delete All Schedules
-    </button>
-</div> </form> 
-
-
-   <table> 
-        <thead> 
-            <tr> 
-                <th>ID</th> 
-                <th>Bus</th> 
-                <th>Route</th> 
-                <th>Travel Date</th> 
-                <th>Departure</th> 
-                <th>Arrival</th> 
-                <th>Action</th> 
-            </tr> 
-        </thead> 
-        <tbody> 
-            <?php while ($row = $schedules_result->fetch_assoc()) { ?> 
-            <tr> 
-                <td><?php echo $row['id']; ?></td> 
-                <td><?php echo htmlspecialchars($row['bus_name']); ?></td> 
-                <td><?php echo htmlspecialchars($row['source'] . " to " . $row['destination']); ?></td> 
-                <td><?php echo htmlspecialchars($row['travel_date']); ?></td> 
-                <td><?php echo htmlspecialchars($row['departure_time']); ?></td> 
-                <td><?php echo htmlspecialchars($row['arrival_time']); ?></td> 
-                <td>
-                    <a class="btn-delete" href="?delete_id=<?php echo $row['id']; ?>" onclick="return confirm('Delete this schedule?')">Delete</a>
-                    <button type="button" onclick="openUpdatePopup('<?php echo $row['id']; ?>','<?php echo $row['bus_id']; ?>','<?php echo $row['route_id']; ?>','<?php echo $row['travel_date']; ?>','<?php echo $row['departure_time']; ?>','<?php echo $row['arrival_time']; ?>')">Update</button>
-                </td> 
-            </tr> 
-            <?php } ?> 
-        </tbody> 
-    </table> 
-<div id="updatePopup" style="display:none; position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); background:#1e1e1e; padding:20px; border-radius:10px; z-index:1000; width:350px; color:white;">
-    <h3 style="text-align:center; color:#00ffcc;">Update Schedule</h3>
+<div id="updatePopup">
+    <h3>Update Schedule</h3>
     <form method="POST">
         <input type="hidden" name="update_schedule_id" id="update_schedule_id">
         <label>Bus:</label>
         <select name="update_bus_id" id="update_bus_id" required>
-            <?php
-            $buses->execute();
-            $buses_result = $buses->get_result();
-            while ($bus = $buses_result->fetch_assoc()) {
-                echo '<option value="'.$bus['id'].'">'.htmlspecialchars($bus['bus_name']).'</option>';
-            }
-            ?>
+            <?php foreach($all_buses as $bus): ?>
+            <option value="<?= $bus['id'] ?>"><?= htmlspecialchars($bus['bus_name']) ?></option>
+            <?php endforeach; ?>
         </select>
+
         <label>Route:</label>
-        <select name="update_route_id" id="update_route_id" onchange="setUpdateDuration()" required>
-            <?php
-            $routes->execute();
-            $routes_result = $routes->get_result();
-            while ($route = $routes_result->fetch_assoc()) {
-                echo '<option value="'.$route['id'].'" data-duration="'.$route['duration'].'">'.htmlspecialchars($route['source'].' to '.$route['destination']).'</option>';
-            }
-            ?>
+        <select name="update_route_id" id="update_route_id" required>
+            <?php foreach($all_routes as $route): ?>
+            <option value="<?= $route['id'] ?>"><?= htmlspecialchars($route['source'].' to '.$route['destination']) ?></option>
+            <?php endforeach; ?>
         </select>
+
         <label>Travel Date:</label>
         <input type="date" name="update_travel_date" id="update_travel_date" required>
         <label>Departure:</label>
-        <input type="time" name="update_departure_time" id="update_departure_time" onchange="setUpdateArrivalTime()" required>
+        <input type="time" name="update_departure_time" id="update_departure_time" required>
         <label>Arrival:</label>
         <input type="time" name="update_arrival_time" id="update_arrival_time" required>
-        <div style="margin-top:10px; text-align:center;">
-            <button type="submit" name="update_schedule" style="background:green; padding:5px 15px; border:none; color:white; border-radius:5px;">Update</button>
-            <button type="button" onclick="closeUpdatePopup()" style="background:red; padding:5px 15px; border:none; color:white; border-radius:5px;">Cancel</button>
-        </div>
+
+        <button type="submit" name="update_schedule">Update</button>
+        <button type="button" onclick="closeUpdatePopup()">Cancel</button>
     </form>
 </div>
-</div> 
+</div>
 
-<script> 
-function toggleDropdown() { 
-    document.getElementById("profileDropdown").style.display = document.getElementById("profileDropdown").style.display === "block" ? "none" : "block"; 
-} 
-window.onclick = function(event) { 
-    if (!event.target.closest('.profile-container')) { 
-        document.getElementById("profileDropdown").style.display = "none"; 
-    } 
-} 
+<script>
 function toggleDateFields() {
-  let type = document.getElementById("travel_type").value;
-  document.getElementById("byDateField").style.display = (type === "by_date") ? "block" : "none";
-  document.getElementById("everydayFields").style.display = (type === "everyday") ? "block" : "none";
-}
-function setDuration(sel) {
-    let duration = sel.options[sel.selectedIndex].getAttribute("data-duration");
-    document.getElementById("route_duration").value = duration;
+    let type = document.getElementById('travel_type').value;
+
+    document.getElementById('travel_date').style.display = (type==='by_date') ? 'inline-block' : 'none';
+    document.getElementById('start_date').style.display = (type==='everyday') ? 'inline-block' : 'none';
+
+    document.getElementById('travel_date').required = (type==='by_date');
+    document.getElementById('start_date').required = (type==='everyday');
+
+    document.getElementById('travel_date_label').textContent = (type==='by_date') ? 'Travel Date:' : 'Start Date:';
 }
 
-function openUpdatePopup(id, bus, route, date, dep, arr) {
-    document.getElementById("update_schedule_id").value = id;
-    document.getElementById("update_bus_id").value = bus;
-    document.getElementById("update_route_id").value = route;
-    document.getElementById("update_travel_date").value = date;
-    document.getElementById("update_departure_time").value = dep;
-    document.getElementById("update_arrival_time").value = arr;
-    document.getElementById("updatePopup").style.display = "block";
+function openUpdatePopup(id,bus,route,date,dep,arr){
+    document.getElementById('update_schedule_id').value=id;
+    document.getElementById('update_bus_id').value=bus;
+    document.getElementById('update_route_id').value=route;
+    document.getElementById('update_travel_date').value=date;
+    document.getElementById('update_departure_time').value=dep;
+    document.getElementById('update_arrival_time').value=arr;
+    document.getElementById('updatePopup').style.display='block';
 }
-function closeUpdatePopup() {
-    document.getElementById("updatePopup").style.display = "none";
+function closeUpdatePopup(){
+    document.getElementById('updatePopup').style.display='none';
 }
-function openUpdatePopup(id, bus, route, date, dep, arr) {
-    document.getElementById("update_schedule_id").value = id;
-    document.getElementById("update_bus_id").value = bus;
-    document.getElementById("update_route_id").value = route;
-    document.getElementById("update_travel_date").value = date;
-    document.getElementById("update_departure_time").value = dep;
-    document.getElementById("update_arrival_time").value = arr;
-
-    document.getElementById("updatePopup").style.display = "block";
+function showLoader() {
+    document.getElementById('loader').style.display = 'flex';
 }
 
-// Update arrival time automatically
+// Add loader to Add Schedule form
+document.querySelectorAll('form').forEach(form => {
+    form.addEventListener('submit', function() {
+        showLoader();
+    });
+});
 
-function closeUpdatePopup() {
-    document.getElementById("updatePopup").style.display = "none";
-}
-</script> 
-</body> 
+// Add loader to Delete buttons/links
+document.querySelectorAll('.btn-delete').forEach(btn => {
+    btn.addEventListener('click', function() {
+        showLoader();
+    });
+});
+
+// Delete All button
+document.querySelectorAll('button[onclick*="delete_all"]').forEach(btn => {
+    btn.addEventListener('click', function() {
+        showLoader();
+    });
+});
+
+// Optional: show loader when Update popup form is submitted
+document.querySelectorAll('#updatePopup form').forEach(form => {
+    form.addEventListener('submit', function() {
+        showLoader();
+    });
+});
+document.addEventListener("DOMContentLoaded", function () {
+    const loader = document.getElementById("loader");
+    const emailForm = document.getElementById("emailCsvForm");
+
+    if (emailForm) {
+        emailForm.addEventListener("submit", function (e) {
+            e.preventDefault();
+            loader.style.display = "flex";
+            setTimeout(() => {
+                emailForm.submit();
+            }, 300);
+        });
+    }
+});
+document.getElementById("emailCsvBtn").addEventListener("click", function () {
+    const loader = document.getElementById("loader");
+    loader.style.display = "flex";
+
+    fetch(window.location.href, {
+        method: "POST",
+        body: new URLSearchParams({ email_csv: "1", ajax: "1" })
+    })
+    .then(response => response.text())
+    .then(text => {
+        loader.style.display = "none";
+        if (text.includes("✅")) {
+            alert("✅ CSV file emailed successfully!");
+        } else if (text.includes("❌")) {
+            alert("❌ Failed to send email. Please try again.");
+        } else {
+            alert("✅ Email sent successfully (response received).");
+        }
+    })
+    .catch(err => {
+        loader.style.display = "none";
+        alert("⚠️ Error sending email: " + err.message);
+    });
+});
+</script>
+</body>
 </html>
